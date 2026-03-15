@@ -1,0 +1,34 @@
+{
+  "name": "shelby-id",
+  "version": "1.0.0",
+  "description": "Decentralized identity & portfolio for creators, powered by Shelby Protocol × Aptos",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "keywords": ["shelby", "aptos", "web3", "decentralized-identity", "creator-portfolio"],
+  "author": "Jeaaanotfound",
+  "license": "MIT",
+  "dependencies": {
+    "@aptos-labs/ts-sdk": "^5.0.0",
+    "@aptos-labs/wallet-adapter-react": "latest",
+    "@aptos-labs/wallet-adapter-core": "latest",
+    "@shelby-protocol/sdk": "^0.2.4",
+    "@telegram-apps/bridge": "latest",
+    "lucide-react": "latest",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0"
+  }
+}
