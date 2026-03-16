@@ -8,26 +8,38 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
-  "keywords": ["shelby", "aptos", "web3", "decentralized-identity", "creator-portfolio"],
+  "keywords": [
+    "shelby",
+    "aptos",
+    "web3",
+    "decentralized-identity",
+    "creator-portfolio"
+  ],
   "author": "Jeaaanotfound",
   "license": "MIT",
   "dependencies": {
     "@aptos-labs/ts-sdk": "^5.0.0",
-    "@aptos-labs/wallet-adapter-react": "latest",
     "@aptos-labs/wallet-adapter-core": "latest",
+    "@aptos-labs/wallet-adapter-react": "latest",
+    "@shelby-protocol/react": "^1.0.3",
     "@shelby-protocol/sdk": "^0.2.4",
+    "@tanstack/react-query": "^5.90.21",
     "@telegram-apps/bridge": "latest",
+    "@wallet-standard/core": "^1.1.1",
     "lucide-react": "latest",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "vite-plugin-node-polyfills": "^0.25.0",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.6.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.1",
-    "tailwindcss": "^3.4.0",
-    "postcss": "^8.4.0",
     "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
     "typescript": "^5.5.4",
     "vite": "^5.4.0"
   }
