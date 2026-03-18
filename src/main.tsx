@@ -19,8 +19,12 @@ createRoot(document.getElementById('root')!).render(
         autoConnect={false}
         dappConfig={{
           network: Network.TESTNET,
+          // Tambah API key untuk hindari rate limiting Aptos API
+          aptosApiKeys: {
+            testnet: import.meta.env.VITE_APTOS_API_KEY as string | undefined,
+          },
         }}
-        onError={(error) => console.error('Wallet error:', error)}
+        onError={(error) => console.error('[Wallet]', error)}
       >
         <App />
       </AptosWalletAdapterProvider>
