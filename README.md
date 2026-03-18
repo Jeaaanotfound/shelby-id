@@ -1,15 +1,16 @@
-# 🪪 ShelbyID
+# ShelbyID
 
-**Decentralized identity & portfolio for creators** powered by [Shelby Servers](https://shelby.xyz) × Aptos blockchain.
+**Decentralized identity and portfolio layer for creators**, built on ShelbyServers and Aptos blockchain.
 
-🌐 **Live Demo**: coming soon
+Live Demo: https://shelby-id.vercel.app
 
 ---
 
 ## What is ShelbyID?
 
 ShelbyID gives every creator a permanent, on-chain identity. One link that proves:
-- **Who you are** - verified Aptos wallet identity
+
+- **Who you are** verified Aptos wallet identity
 - **What you've made** all works stored on Shelby Protocol
 - **Who owns it** cryptographic proof, forever on-chain
 
@@ -19,22 +20,25 @@ No platform can take it down. No algorithm can bury it.
 
 ## Features
 
-- 🪪 **Mint your ShelbyID** - create your decentralized identity on Aptos
-- **Portfolio page** - showcase all your works stored on Shelby
-- **Permanent link** - `shelbyid/{your_address}` never breaks
-- **Verified badge** - on-chain proof of identity
-- **Petra Wallet** - connect with Aptos Wallet Standard
+- **Mint your ShelbyID** create your decentralized identity on Aptos
+- **Creator portfolio** showcase all your works stored on Shelby
+- **Personal dashboard** manage uploads, track storage, view file breakdown
+- **Public gallery** share your works publicly with per-file public/private control
+- **Shareable profile link** one permanent link tied to your wallet address
+- **Verified badge** on-chain proof of identity
+- **Multi-wallet support** connect with any AIP-62 compatible Aptos wallet
 
 ---
 
 ## Tech Stack
 
-- **React** + **TypeScript** + **Vite**
-- **Shelby Protocol SDK** (`@shelby-protocol/sdk`)
-- **Aptos TypeScript SDK** (`@aptos-labs/ts-sdk`)
-- **Aptos Wallet Adapter** (`@aptos-labs/wallet-adapter-react`)
-- **Tailwind CSS**
-- Network: **Aptos Testnet** / **Shelbynet**
+- React + TypeScript + Vite
+- Shelby Protocol SDK (`@shelby-protocol/sdk` + `@shelby-protocol/react`)
+- Aptos TypeScript SDK (`@aptos-labs/ts-sdk`)
+- Aptos Wallet Adapter (`@aptos-labs/wallet-adapter-react`)
+- TanStack React Query
+- Tailwind CSS
+- Network: Aptos Testnet
 
 ---
 
@@ -46,6 +50,21 @@ cd shelby-id
 npm install --legacy-peer-deps
 npm run dev
 ```
+
+Create a `.env` file in the root directory:
+
+```
+VITE_SHELBY_API_KEY=aptoslabs_xxxxx
+```
+
+---
+
+## Use Cases
+
+- Creator portfolios
+- On-chain identity verification
+- Permanent public creative profiles
+- Work ownership proof
 
 ---
 
