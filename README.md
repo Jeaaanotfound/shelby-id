@@ -2,7 +2,7 @@
 
 **Decentralized identity and portfolio layer for creators**, built on ShelbyServers and Aptos blockchain.
 
-Live Demo: https://shelby-id.vercel.app
+Live Demo: https://shelby-id.vercel.app/
 
 ---
 
