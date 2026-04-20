@@ -22,7 +22,7 @@
     "@aptos-labs/wallet-adapter-core": "8.5.0",
     "@aptos-labs/wallet-adapter-react": "8.5.0",
     "@shelby-protocol/react": "^1.0.3",
-    "@shelby-protocol/sdk": "^0.2.4",
+    "@shelby-protocol/sdk": "0.2.3",
     "@tanstack/react-query": "^5.90.21",
     "@telegram-apps/bridge": "2.11.0",
     "@wallet-standard/core": "^1.1.1",
