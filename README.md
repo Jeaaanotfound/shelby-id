@@ -1,80 +1,93 @@
 # ShelbyID
 
-**Decentralized identity and portfolio layer for creators**, built on ShelbyServers and Aptos blockchain.
+ShelbyID is a creator identity layer built on Shelby Protocol and Aptos. It turns a wallet into a public profile, a shareable archive, and a cleaner way to present work stored on Shelby.
 
-Live: https://shelby-id.vercel.app/
+![ShelbyID product preview](docs/images/shelbyid-app.png)
 
----
+Live: [shelby-id.vercel.app](https://shelby-id.vercel.app/)  
+Repo: [Jeaaanotfound/shelby-id](https://github.com/Jeaaanotfound/shelby-id)
 
-## What is ShelbyID?
+## What ShelbyID does
 
-ShelbyID gives every creator a permanent, on-chain identity. One link that proves:
+ShelbyID gives creators a durable public surface on top of decentralized storage.
 
-- **Who you are** verified Aptos wallet identity
-- **What you've made** all works stored on Shelby Protocol
-- **Who owns it** cryptographic proof, forever on-chain
+- Mint a Shelby-backed identity tied to an Aptos wallet
+- Upload media to Shelby and keep it organized as a real profile, not a raw blob list
+- Publish a shareable gallery with profile metadata, avatar, and archived work
+- Switch between ShelbyNet and Testnet from the same app
+- Present onchain work in a way that feels usable to communities, collaborators, and collectors
 
-No platform can take it down. No algorithm can bury it.
+## Why it exists
 
----
+Shelby storage is strong infrastructure, but most people do not want to interact with infrastructure directly. ShelbyID gives that storage a front door: identity, presentation, and a public link that feels intentional.
 
-## Features
+## Product surfaces
 
-- **Mint your ShelbyID** create your decentralized identity on Aptos
-- **Creator portfolio** showcase all your works stored on Shelby
-- **Personal dashboard** manage uploads, track storage, view file breakdown
-- **Public gallery** share your works publicly with per-file public/private control
-- **Shareable profile link** one permanent link tied to your wallet address
-- **Verified badge** on-chain proof of identity
-- **Multi-wallet support** connect with any AIP-62 compatible Aptos wallet
+- Home: a premium landing surface that explains the identity layer
+- Mint: create a ShelbyID profile and store identity metadata on Shelby
+- Workspace: upload and manage creator files
+- Gallery: present public work through a cleaner archival view
+- Profile: show identity, avatar, and creator metadata in one place
 
----
+## Stack
 
-## Tech Stack
+- React
+- TypeScript
+- Vite
+- Aptos TypeScript SDK
+- Aptos Wallet Adapter
+- Shelby Protocol SDK and React hooks
+- TanStack Query
+- Vercel
 
-- React + TypeScript + Vite
-- Shelby Protocol SDK (`@shelby-protocol/sdk` + `@shelby-protocol/react`)
-- Aptos TypeScript SDK (`@aptos-labs/ts-sdk`)
-- Aptos Wallet Adapter (`@aptos-labs/wallet-adapter-react`)
-- TanStack React Query
-- Tailwind CSS
-- Network: Aptos Testnet
+## Networks
 
----
+- ShelbyNet
+- Aptos Testnet
 
-## Getting Started
+ShelbyID is network-aware, including explorer links, storage reads, wallet flows, and per-network API key handling.
+
+## Local development
 
 ```bash
 git clone https://github.com/Jeaaanotfound/shelby-id
 cd shelby-id
-npm install --legacy-peer-deps
+npm install
 npm run dev
 ```
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the project root:
 
+```env
+VITE_SHELBY_TESTNET_API_KEY=
+VITE_SHELBY_SHELBYNET_API_KEY=
+VITE_APTOS_TESTNET_API_KEY=
+VITE_APTOS_SHELBYNET_API_KEY=
 ```
-VITE_SHELBY_API_KEY=aptoslabs_xxxxx
-```
 
----
+If you only have Shelby API keys, the app can still use those without the Aptos-specific ones.
 
-## Use Cases
+## Deployment
 
-- Creator portfolios
-- On-chain identity verification
-- Permanent public creative profiles
-- Work ownership proof
+For Vercel:
 
----
+- Framework Preset: `Vite`
+- Build Command: `npm run build`
+- Output Directory: `dist`
+- Production Branch: `main`
+
+Environment variables:
+
+- `VITE_SHELBY_TESTNET_API_KEY`
+- `VITE_SHELBY_SHELBYNET_API_KEY`
+- `VITE_APTOS_TESTNET_API_KEY`
+- `VITE_APTOS_SHELBYNET_API_KEY`
 
 ## References
 
 - [Shelby Docs](https://docs.shelby.xyz)
-- [Aptos Explorer](https://explorer.aptoslabs.com)
 - [Shelby Explorer](https://explorer.shelby.xyz)
-
----
+- [Aptos Docs](https://aptos.dev)
 
 ## License
 
