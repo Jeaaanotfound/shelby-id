@@ -8,16 +8,8 @@ interface SkeletonProps {
 export function Skeleton({ width = '100%', height = '12px', borderRadius = '6px', className = '' }: SkeletonProps) {
   return (
     <div
-      className={className}
-      style={{
-        width,
-        height,
-        borderRadius,
-        background: 'linear-gradient(90deg, #1e0028 25%, #3a0055 50%, #1e0028 75%)',
-        backgroundSize: '1200px 100%',
-        animation: 'skeleton-shimmer 1.6s infinite linear',
-        display: 'block',
-      }}
+      className={`skeleton ${className}`}
+      style={{ width, height, borderRadius, display: 'block' }}
     />
   )
 }
@@ -26,14 +18,12 @@ export function ProfileSkeleton() {
   return (
     <div className="pt-20 min-h-screen">
       <div className="max-w-3xl mx-auto px-6 pb-24">
-        <div className="mt-6 rounded-2xl overflow-hidden"
-          style={{ background: 'var(--dark-2)', border: '1px solid rgba(255,105,176,0.12)' }}>
+        <div className="mt-6 rounded-2xl overflow-hidden glass-card">
           {/* Banner */}
           <Skeleton height="56px" borderRadius="0" />
           <div className="px-6 pb-6">
             {/* Avatar */}
-            <Skeleton width="52px" height="52px" borderRadius="12px"
-              className="mb-4" />
+            <Skeleton width="52px" height="52px" borderRadius="12px" className="mb-4" />
             {/* Name */}
             <Skeleton width="140px" height="18px" className="mb-2" />
             {/* Address */}
@@ -61,9 +51,7 @@ export function ProfileSkeleton() {
           <Skeleton width="100px" height="10px" className="mb-4" />
           <div className="space-y-2">
             {[140, 120, 160].map((w, i) => (
-              <div key={i}
-                style={{ background: 'var(--dark-2)', border: '1px solid rgba(255,105,176,0.08)', borderRadius: '12px', padding: '12px' }}
-                className="flex items-center gap-3">
+              <div key={i} className="page-card flex items-center gap-3 px-3 py-3">
                 <Skeleton width="36px" height="36px" borderRadius="10px" />
                 <div className="flex-1 space-y-2">
                   <Skeleton width={`${w}px`} height="12px" />
@@ -93,8 +81,8 @@ export function DashboardSkeleton() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          {[1,2,3,4].map(i => (
-            <div key={i} style={{ background: 'var(--dark-2)', border: '1px solid rgba(255,105,176,0.08)', borderRadius: '12px', padding: '16px' }}>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="premium-stat p-4">
               <Skeleton width="80px" height="10px" className="mb-3" />
               <Skeleton width="60px" height="22px" className="mb-2" />
               <Skeleton width="90px" height="9px" />
@@ -106,16 +94,14 @@ export function DashboardSkeleton() {
           {/* Recent works */}
           <div className="md:col-span-2">
             <Skeleton width="100px" height="10px" className="mb-3" />
-            <div style={{ background: 'var(--dark-2)', border: '1px solid rgba(255,105,176,0.08)', borderRadius: '12px', padding: '16px', marginBottom: '8px' }}>
+            <div className="glass-card p-4 mb-2">
               <div className="flex items-center justify-center gap-2">
                 <Skeleton width="180px" height="11px" />
               </div>
             </div>
             <div className="space-y-2">
               {[150, 130, 140].map((w, i) => (
-                <div key={i}
-                  style={{ background: 'var(--dark-2)', border: '1px solid rgba(255,105,176,0.08)', borderRadius: '12px', padding: '12px' }}
-                  className="flex items-center gap-3">
+                <div key={i} className="page-card flex items-center gap-3 px-3 py-3">
                   <Skeleton width="32px" height="32px" borderRadius="8px" />
                   <div className="flex-1 space-y-2">
                     <Skeleton width={`${w}px`} height="12px" />

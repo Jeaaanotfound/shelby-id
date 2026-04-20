@@ -1,33 +1,61 @@
-import { StrictMode } from 'react'
+import { StrictMode, useMemo } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AptosWalletAdapterProvider } from '@aptos-labs/wallet-adapter-react'
-import { Network } from '@aptos-labs/ts-sdk'
 import './index.css'
 import App from './App.tsx'
+import { AppSettingsProvider, useAppSettings } from './context/AppSettings'
+import { ToastProvider } from './context/ToastContext'
+import { WalletRuntimeProvider, useWalletRuntime } from './context/WalletRuntime'
+import { getAptosApiKey } from './lib/aptos'
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { retry: 1, staleTime: 30_000 },
-  },
-})
+function RuntimeProviders() {
+  const { networkConfig, networkKey } = useAppSettings()
+  const { walletRuntimeVersion } = useWalletRuntime()
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
+  const queryClient = useMemo(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: 1, staleTime: 30_000 },
+        },
+      }),
+    [networkKey]
+  )
+
+  const aptosApiKeys = useMemo(
+    () => ({
+      testnet: getAptosApiKey('testnet'),
+      shelbynet: getAptosApiKey('shelbynet'),
+    }),
+    []
+  )
+
+  return (
     <QueryClientProvider client={queryClient}>
       <AptosWalletAdapterProvider
-        autoConnect={false}
+        key={`${networkKey}-${walletRuntimeVersion}`}
+        autoConnect
         dappConfig={{
-          network: Network.TESTNET,
-          // Tambah API key untuk hindari rate limiting Aptos API
-          aptosApiKeys: {
-            testnet: import.meta.env.VITE_APTOS_API_KEY as string | undefined,
-          },
+          network: networkConfig.aptosNetwork,
+          aptosApiKeys,
         }}
         onError={(error) => console.error('[Wallet]', error)}
       >
-        <App />
+        <App key={networkKey} />
       </AptosWalletAdapterProvider>
     </QueryClientProvider>
+  )
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <ToastProvider>
+      <WalletRuntimeProvider>
+        <AppSettingsProvider>
+          <RuntimeProviders />
+        </AppSettingsProvider>
+      </WalletRuntimeProvider>
+    </ToastProvider>
   </StrictMode>,
 )

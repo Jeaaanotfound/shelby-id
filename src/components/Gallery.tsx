@@ -1,446 +1,553 @@
-import { useState, useCallback } from 'react'
-import {
-  Grid, List, Share2, CheckCircle,
-  Lock, Unlock, Image, Music, Video, FileText,
-  Loader, AlertCircle, ExternalLink, Eye, EyeOff, Plus,
-} from 'lucide-react'
-import { useAccountBlobs, useUploadBlobs } from '@shelby-protocol/react'
+import { Grid, List, Share2, Upload, Image, Music, FileText, Video, Eye, EyeOff, X, ChevronLeft, ChevronRight, Loader, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { useAccountBlobs } from '@shelby-protocol/react'
+import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
 import { useWallet as useAptosWallet } from '@aptos-labs/wallet-adapter-react'
-import { AccountAddress } from '@aptos-labs/ts-sdk'
-import { shelbyClient } from '../lib/shelby'
+import { useAppSettings } from '../context/AppSettings'
+import { useToast } from '../context/ToastContext'
+import { getWalletAddress, isValidAptosAddress, sameAddress } from '../lib/aptos'
+import { buildBlobName, createExpirationMicros, formatShelbyErrorMessage, getBlobReadUrl, isReservedBlobPath } from '../lib/shelby'
+import { uploadShelbyBlobsWithWallet, type UploadProgressUpdate } from '../lib/shelbyWrite'
+import { ensureWalletMatchesAppNetwork, getTransactionErrorMessage, isWalletRejectedError } from '../lib/transactions'
 import { useIdentity } from '../hooks/useIdentity'
+import { useAvatar } from '../hooks/useAvatar'
 
-type Page = 'home' | 'profile' | 'create' | 'dashboard' | 'gallery'
-type ViewMode = 'grid' | 'list'
-type FilterType = 'all' | 'image' | 'music' | 'video' | 'doc'
-
-interface GalleryProps { walletAddress: string | null; setCurrentPage: (p: Page) => void }
-interface ShelbyBlob {
-  blobName?: string; name?: string; blobNameSuffix?: string
-  size?: number; creationMicros?: number; isWritten?: boolean
+interface GalleryProps {
+  walletAddress: string | null
 }
-type VisibilityMap = Record<string, 'public' | 'private'>
 
-const SHELBY_RPC = 'https://api.testnet.shelby.xyz/shelby'
+type ShelbyBlob = BlobMetadata
+type Filter = 'all' | 'image' | 'music' | 'video' | 'doc'
+type ViewMode = 'grid' | 'list'
+type UploadCardTone = 'active' | 'success' | 'error'
 
-function getBlobName(b: ShelbyBlob) { return b.blobName ?? b.name ?? b.blobNameSuffix ?? '' }
-function getShortName(n: string) { return n.split('/').pop() ?? n }
-function getFileType(n: string): 'image'|'music'|'video'|'doc' {
-  const l = n.toLowerCase()
-  if (l.match(/\.(jpg|jpeg|png|gif|webp|svg|avif)$/)) return 'image'
-  if (l.match(/\.(mp3|wav|flac|aac|ogg)$/))           return 'music'
-  if (l.match(/\.(mp4|mov|avi|mkv|webm)$/))           return 'video'
+interface UploadCardState {
+  progress: number
+  stage: string
+  tone: UploadCardTone
+  detail?: string
+}
+
+function getBlobName(blob: ShelbyBlob): string {
+  return blob.blobNameSuffix ?? String(blob.name) ?? ''
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatDate(micros?: number): string {
+  if (!micros) return ''
+  return new Date(micros / 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function getFileType(name: string): Filter {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif'].includes(ext)) return 'image'
+  if (['mp3', 'wav', 'flac', 'aac', 'ogg'].includes(ext)) return 'music'
+  if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'video'
   return 'doc'
 }
-function fmtBytes(b: number) {
-  if (b < 1024) return `${b} B`
-  if (b < 1024*1024) return `${(b/1024).toFixed(1)} KB`
-  return `${(b/1024/1024).toFixed(1)} MB`
-}
-function fmtDate(m: number) {
-  return new Date(m/1000).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
-}
 
-const typeConfig = {
-  image: { icon: Image,    color: '#2dd4bf', label: 'Images'    },
-  music: { icon: Music,    color: '#818cf8', label: 'Audio'     },
-  video: { icon: Video,    color: '#f472b6', label: 'Videos'    },
-  doc:   { icon: FileText, color: '#fb923c', label: 'Documents' },
+function FileIcon({ name, size = 16 }: { name: string; size?: number }) {
+  const type = getFileType(name)
+  const icons: Record<Filter, React.ElementType> = { all: FileText, image: Image, music: Music, video: Video, doc: FileText }
+  const Icon = icons[type]
+  const colors: Record<Filter, string> = { all: 'var(--cat-image)', image: 'var(--cat-image)', music: 'var(--cat-music)', video: 'var(--cat-video)', doc: 'var(--cat-doc)' }
+  return <Icon size={size} style={{ color: colors[type] }} />
 }
 
-export default function Gallery({ walletAddress, setCurrentPage }: GalleryProps) {
-  const [viewMode, setViewMode]         = useState<ViewMode>('grid')
-  const [filter, setFilter]             = useState<FilterType>('all')
-  const [copied, setCopied]             = useState(false)
-  const [visibility, setVisibility]     = useState<VisibilityMap>({})
-  const [savingVis, setSavingVis]       = useState(false)
-  const [selectedBlob, setSelectedBlob] = useState<ShelbyBlob | null>(null)
+function FileThumbnail({ account, blob }: { account: string; blob: ShelbyBlob }) {
+  const { networkKey } = useAppSettings()
+  const [imgFailed, setImgFailed] = useState(false)
+  const name = getBlobName(blob)
+  const type = getFileType(name)
 
-  const { account, signAndSubmitTransaction } = useAptosWallet()
-  const { data: identity } = useIdentity(walletAddress)
-  const isOwner = !!walletAddress && !!account
-
-  const { data: raw, isLoading, isError, refetch } =
-    useAccountBlobs({ client: shelbyClient, account: walletAddress ?? '', enabled: !!walletAddress } as any)
-
-  const blobs: ShelbyBlob[] = (raw as ShelbyBlob[] | undefined) ?? []
-  const uploadBlobs = useUploadBlobs({ client: shelbyClient })
-
-  const works   = blobs.filter(b => !getBlobName(b).includes('identity.json') && !getBlobName(b).includes('gallery.json'))
-  const filtered = works.filter(b => filter === 'all' || getFileType(getShortName(getBlobName(b))) === filter)
-  const publicWorks = filtered.filter(b => (visibility[getBlobName(b)] ?? 'public') === 'public')
-  const displayWorks = isOwner ? filtered : publicWorks
-
-  const toggleVisibility = useCallback(async (blobName: string) => {
-    if (!isOwner || !account || !signAndSubmitTransaction) return
-    const next: VisibilityMap = { ...visibility, [blobName]: (visibility[blobName] ?? 'public') === 'public' ? 'private' : 'public' }
-    setVisibility(next)
-    setSavingVis(true)
-    const blobData = new TextEncoder().encode(JSON.stringify(next, null, 2))
-    uploadBlobs.mutate(
-      {
-        signer: { account: AccountAddress.from(account.address), signAndSubmitTransaction },
-        blobs: [{ blobName: `shelbyid/${walletAddress}/gallery.json`, blobData }],
-        expirationMicros: Date.now() * 1000 + 365 * 24 * 60 * 60 * 1_000_000,
-      },
-      { onSuccess: () => setSavingVis(false), onError: () => setSavingVis(false) }
-    )
-  }, [isOwner, account, signAndSubmitTransaction, visibility, walletAddress, uploadBlobs])
-
-  const copyShareLink = () => {
-    navigator.clipboard.writeText(`${window.location.origin}?gallery=${walletAddress}`)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  if (type === 'image' && !imgFailed) {
+    const blobUrl = `${getBlobReadUrl(account, name, networkKey)}?t=${blob.creationMicros ?? Date.now()}`
+    return <img src={blobUrl} alt={name} className="w-full h-full object-cover" loading="lazy" decoding="async" onError={() => setImgFailed(true)} />
   }
 
-  if (!walletAddress) return (
-    <div className="min-h-screen flex items-center justify-center px-6">
-      <div className="text-center">
-        <p className="text-sm mono mb-1" style={{ color: 'var(--teal)' }}>$ wallet_not_connected</p>
-        <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>Connect wallet to view gallery.</p>
-        <button onClick={() => setCurrentPage('home')} className="btn-teal px-4 py-2 rounded-lg text-xs">go_home →</button>
-      </div>
-    </div>
-  )
-
-  if (isLoading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center">
-        <Loader size={22} className="animate-spin mx-auto mb-3" style={{ color: 'var(--teal)' }}/>
-        <p className="text-xs mono" style={{ color: 'var(--muted)' }}>loading_gallery...</p>
-      </div>
-    </div>
-  )
-
-  if (isError) return (
-    <div className="min-h-screen flex items-center justify-center px-6">
-      <div className="text-center">
-        <AlertCircle size={22} className="mx-auto mb-3" style={{ color: '#f87171' }}/>
-        <p className="text-xs mono mb-4" style={{ color: '#f87171' }}>fetch_failed</p>
-        <button onClick={() => refetch()} className="btn-outline text-xs px-4 py-2 rounded-lg">retry_</button>
-      </div>
-    </div>
-  )
-
-  const displayName = identity?.displayName ?? 'anonymous'
-  const initial     = displayName.charAt(0).toUpperCase()
+  const bgColors: Record<Filter, string> = {
+    all: 'var(--cat-image-bg)',
+    image: 'var(--cat-image-bg)',
+    music: 'var(--cat-music-bg)',
+    video: 'var(--cat-video-bg)',
+    doc: 'var(--cat-doc-bg)',
+  }
 
   return (
-    <div className="pt-20 min-h-screen">
-      <div className="max-w-5xl mx-auto px-6 pb-24">
+    <div className="w-full h-full flex flex-col items-center justify-center gap-2 p-4" style={{ background: bgColors[type] }}>
+      <FileIcon name={name} size={28} />
+      <p className="text-xs text-center break-all font-mono line-clamp-2" style={{ color: 'var(--muted)' }}>
+        {name.split('/').pop()}
+      </p>
+    </div>
+  )
+}
 
-        {/* Creator banner */}
-        <div className="animate-fade-up delay-1 mt-6 rounded-2xl overflow-hidden mb-6"
-          style={{ background: 'var(--dark-2)', border: '1px solid rgba(45,212,191,0.12)' }}>
-          <div className="h-16 relative overflow-hidden"
-            style={{ background: 'linear-gradient(135deg, rgba(255,105,176,0.08) 0%, rgba(120,0,180,0.06) 50%, rgba(255,105,176,0.03) 100%)' }}>
+export default function Gallery({ walletAddress }: GalleryProps) {
+  const { networkConfig, networkKey, shelbyClient } = useAppSettings()
+  const { notify } = useToast()
+  const [filter, setFilter] = useState<Filter>('all')
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [lightbox, setLightbox] = useState<number | null>(null)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const [visibility, setVisibility] = useState<Record<string, boolean>>({})
+  const [uploadProgress, setUploadProgress] = useState<Record<string, UploadCardState>>({})
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const { account, network, signTransaction } = useAptosWallet()
+  const connectedAddress = getWalletAddress(account)
+  const { data: identity } = useIdentity(walletAddress)
+  const { avatarUrl } = useAvatar(walletAddress)
+
+  const { data: rawBlobs, isLoading, refetch } = useAccountBlobs({
+    client: shelbyClient,
+    account: walletAddress ?? '',
+    enabled: !!walletAddress && isValidAptosAddress(walletAddress),
+  })
+
+  const allBlobs: ShelbyBlob[] = (rawBlobs ?? []).filter((blob) => !isReservedBlobPath(getBlobName(blob)))
+  const filtered = filter === 'all' ? allBlobs : allBlobs.filter((blob) => getFileType(getBlobName(blob)) === filter)
+
+  const counts: Record<Filter, number> = {
+    all: allBlobs.length,
+    image: allBlobs.filter((blob) => getFileType(getBlobName(blob)) === 'image').length,
+    music: allBlobs.filter((blob) => getFileType(getBlobName(blob)) === 'music').length,
+    video: allBlobs.filter((blob) => getFileType(getBlobName(blob)) === 'video').length,
+    doc: allBlobs.filter((blob) => getFileType(getBlobName(blob)) === 'doc').length,
+  }
+
+  const toggleVisibility = (name: string) => {
+    setVisibility((current) => ({ ...current, [name]: !current[name] }))
+  }
+
+  const updateUploadCard = (fileName: string, next: Partial<UploadCardState>) => {
+    setUploadProgress((current) => {
+      const existing = current[fileName] ?? {
+        progress: 0,
+        stage: 'Preparing upload',
+        tone: 'active' as UploadCardTone,
+      }
+
+      return {
+        ...current,
+        [fileName]: {
+          ...existing,
+          ...next,
+        },
+      }
+    })
+  }
+
+  const removeUploadCards = (fileNames: string[]) => {
+    setUploadProgress((current) => {
+      const next = { ...current }
+      fileNames.forEach((fileName) => {
+        delete next[fileName]
+      })
+      return next
+    })
+  }
+
+  const formatUploadStage = ({ stage, detail }: UploadProgressUpdate) => {
+    const base =
+      {
+        awaiting_wallet: 'Waiting for wallet approval',
+        registering: 'Registering blob onchain',
+        uploading: 'Uploading to Shelby',
+        finalizing: 'Finalizing upload',
+        verifying: 'Checking write status',
+        done: 'Stored on network',
+      }[stage] ?? 'Processing upload'
+
+    return detail ? `${base}. ${detail}` : base
+  }
+
+  const shareGallery = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('gallery', walletAddress ?? '')
+    url.searchParams.set('network', networkKey)
+    navigator.clipboard.writeText(url.toString())
+    setLinkCopied(true)
+    notify({
+      tone: 'success',
+      title: 'Gallery link copied',
+      description: `Shareable ${networkConfig.label} gallery link copied to clipboard.`,
+    })
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
+
+  const handleUpload = async (files: FileList | null) => {
+    if (!files || !walletAddress || !connectedAddress || !signTransaction) return
+    if (!sameAddress(connectedAddress, walletAddress)) {
+      notify({
+        tone: 'error',
+        title: 'Wallet mismatch',
+        description: 'Connect the same wallet that owns this gallery before uploading.',
+      })
+      return
+    }
+
+    try {
+      await ensureWalletMatchesAppNetwork({
+        walletNetwork: network,
+        changeNetwork: null,
+        networkKey,
+        notify,
+      })
+    } catch (error) {
+      notify({
+        tone: 'error',
+        title: 'Upload blocked',
+        description: getTransactionErrorMessage(error, 'Upload work', networkKey),
+      })
+      return
+    }
+
+    const expiry = createExpirationMicros(7)
+    const fileList = Array.from(files)
+
+    fileList.forEach((file) => {
+      updateUploadCard(file.name, {
+        progress: 12,
+        stage: 'Preparing file',
+        tone: 'active',
+      })
+    })
+
+    try {
+      const preparedBlobs = await Promise.all(
+        fileList.map(async (file) => ({
+          fileName: file.name,
+          blobName: buildBlobName(walletAddress, file.name),
+          blobData: new Uint8Array(await file.arrayBuffer()),
+        }))
+      )
+
+      const blobNameToFileName = new Map(preparedBlobs.map(({ blobName, fileName }) => [blobName, fileName]))
+
+      preparedBlobs.forEach(({ fileName }) => {
+        updateUploadCard(fileName, {
+          progress: 28,
+          stage: 'Preparing upload payload',
+          tone: 'active',
+        })
+      })
+
+      const result = await uploadShelbyBlobsWithWallet({
+        client: shelbyClient,
+        walletAddress,
+        signTransaction,
+        blobs: preparedBlobs.map(({ blobName, blobData }) => ({ blobName, blobData })),
+        expirationMicros: expiry,
+        networkKey,
+        onProgress: (update) => {
+          const fileName = blobNameToFileName.get(update.blobName)
+          if (!fileName) return
+
+          updateUploadCard(fileName, {
+            progress: update.progress,
+            stage: formatUploadStage(update),
+            tone: update.stage === 'done' ? 'success' : 'active',
+          })
+        },
+      })
+
+      preparedBlobs.forEach(({ fileName }) => {
+        updateUploadCard(fileName, {
+          progress: 100,
+          stage:
+            result.registrationStatus === 'registered'
+              ? 'Stored successfully'
+              : 'Updated successfully. Blob was already registered.',
+          tone: 'success',
+        })
+      })
+
+      notify({
+        tone: 'success',
+        title: 'Gallery upload complete',
+        description:
+          result.registrationStatus === 'registered'
+            ? `${preparedBlobs.length} file${preparedBlobs.length > 1 ? 's' : ''} stored on ${networkConfig.label}.`
+            : `Files were updated on ${networkConfig.label}. No wallet approval was needed because the blobs were already registered.`,
+      })
+
+      window.setTimeout(() => {
+        removeUploadCards(preparedBlobs.map(({ fileName }) => fileName))
+        refetch()
+      }, 1500)
+    } catch (error) {
+      const description = isWalletRejectedError(error)
+        ? getTransactionErrorMessage(error, 'Upload work', networkKey)
+        : formatShelbyErrorMessage(error, networkKey)
+
+      fileList.forEach((file) => {
+        updateUploadCard(file.name, {
+          progress: Math.max(uploadProgress[file.name]?.progress ?? 0, 18),
+          stage: 'Upload failed',
+          detail: description,
+          tone: 'error',
+        })
+      })
+
+      notify({
+        tone: 'error',
+        title: 'Gallery upload failed',
+        description,
+      })
+
+      window.setTimeout(() => {
+        removeUploadCards(fileList.map((file) => file.name))
+      }, 7000)
+    }
+  }
+
+  const isOwner = !!walletAddress && sameAddress(connectedAddress, walletAddress)
+  const initials = identity?.displayName?.[0]?.toUpperCase() ?? walletAddress?.[2]?.toUpperCase() ?? '?'
+  const publicCount = allBlobs.filter((blob) => visibility[getBlobName(blob)] !== false).length
+  const privateCount = allBlobs.length - publicCount
+
+  const filters: { key: Filter; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'image', label: 'Image' },
+    { key: 'music', label: 'Music' },
+    { key: 'video', label: 'Video' },
+    { key: 'doc', label: 'Doc' },
+  ]
+
+  return (
+    <div className="premium-shell">
+      <div className="premium-frame">
+        <section className="premium-hero animate-fade-up">
+          <div className="premium-hero__grid">
+            <div>
+              <span className="premium-kicker">Gallery Floor</span>
+              <h1 className="premium-title premium-title--wide">Present files like a curated archive, not a random bucket of blobs.</h1>
+              <p className="premium-copy">
+                Shelby storage may be technical under the hood, but the surface should feel considered. This gallery shows what is public, what is private, and what is worth sharing.
+              </p>
+              <div className="premium-meta-row">
+                <span className="premium-chip premium-chip--accent">{networkConfig.label}</span>
+                <span className="premium-chip">{counts.all} works</span>
+                <span className="premium-chip">{publicCount} public / {privateCount} private</span>
+              </div>
             </div>
-          <div className="px-5 pb-5">
-            <div className="flex items-end justify-between -mt-6">
-              <div className="flex items-end gap-3">
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold mono flex-shrink-0"
-                  style={{
-                    background: 'linear-gradient(135deg, var(--dark-3) 0%, rgba(255,105,176,0.1) 100%)',
-                    border: '2px solid rgba(255,105,176,0.25)',
-                    color: 'var(--teal)',
-                  }}>
-                  {initial}
+            <div className="curation-panel">
+              <div className="identity-stage">
+                <div className="identity-stage__avatar" style={{ padding: 0 }}>
+                  {avatarUrl ? <img src={avatarUrl} alt={identity?.displayName ?? 'avatar'} className="w-full h-full object-cover" /> : initials}
                 </div>
-                <div className="pb-1">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold mono">{displayName}</h2>
-                    {identity && (
-                      <span className="text-xs mono px-1.5 py-0.5 rounded-full"
-                        style={{ background: 'var(--teal-dim)', color: 'var(--teal)', border: '1px solid rgba(45,212,191,0.2)', fontSize: '10px' }}>
-                        ✓ verified
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                    {publicWorks.length} public · {works.length - publicWorks.length} private
-                  </p>
+                <div>
+                  <h2 className="identity-stage__title">{identity?.displayName ?? 'anonymous'}</h2>
+                  <p className="identity-stage__sub">A Shelby-backed media shelf that is ready to be shared.</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 pb-1">
-                {savingVis && (
-                  <span className="text-xs mono flex items-center gap-1" style={{ color: 'var(--muted)' }}>
-                    <Loader size={10} className="animate-spin"/> saving...
-                  </span>
-                )}
+              <div className="muted-dot-list">
+                <span>{counts.image} image</span>
+                <span>{counts.video} video</span>
+                <span>{counts.music} audio</span>
+              </div>
+              <div className="action-row">
                 {isOwner && (
-                  <button onClick={() => setCurrentPage('dashboard')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs mono"
-                    style={{ background: 'var(--dark-3)', border: '1px solid rgba(45,212,191,0.1)', color: 'var(--muted)' }}
-                    onMouseEnter={e => (e.currentTarget.style.color='var(--teal)')}
-                    onMouseLeave={e => (e.currentTarget.style.color='var(--muted)')}>
-                    <Plus size={11}/> upload
-                  </button>
+                  <>
+                    <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => handleUpload(event.target.files)} />
+                    <button onClick={() => fileInputRef.current?.click()} className="btn-pink px-5 py-3 rounded-full text-sm font-semibold inline-flex items-center gap-2">
+                      <Upload size={14} /> Upload
+                    </button>
+                  </>
                 )}
-                <button onClick={copyShareLink}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs mono transition-all"
-                  style={{
-                    background: copied ? 'var(--teal-dim)' : 'var(--dark-3)',
-                    border: `1px solid ${copied ? 'rgba(45,212,191,0.3)' : 'rgba(45,212,191,0.1)'}`,
-                    color: copied ? 'var(--teal)' : 'var(--muted)',
-                  }}>
-                  {copied ? <CheckCircle size={11}/> : <Share2 size={11}/>}
-                  {copied ? 'copied!' : 'share'}
+                <button onClick={shareGallery} className="btn-ghost px-5 py-3 rounded-full text-sm inline-flex items-center gap-2">
+                  <Share2 size={14} /> {linkCopied ? 'Copied' : 'Share'}
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Toolbar */}
-        <div className="animate-fade-up delay-2 flex items-center justify-between mb-4 gap-3 flex-wrap">
-          <div className="flex items-center gap-1 flex-wrap">
-            {(['all','image','music','video','doc'] as FilterType[]).map(t => {
-              const cfg   = t === 'all' ? null : typeConfig[t]
-              const count = t === 'all' ? works.length : works.filter(b => getFileType(getShortName(getBlobName(b))) === t).length
-              return (
-                <button key={t} onClick={() => setFilter(t)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs mono transition-all"
-                  style={{
-                    background: filter === t ? 'var(--teal-dim)' : 'var(--dark-3)',
-                    color: filter === t ? 'var(--teal)' : 'var(--muted)',
-                    border: `1px solid ${filter === t ? 'rgba(45,212,191,0.25)' : 'transparent'}`,
-                  }}>
-                  {cfg && <cfg.icon size={10} style={{ color: cfg.color }}/>}
-                  {t} ({count})
-                </button>
-              )
-            })}
-          </div>
-          <div className="flex items-center gap-1">
-            {(['grid','list'] as ViewMode[]).map(m => {
-              const Icon = m === 'grid' ? Grid : List
-              return (
-                <button key={m} onClick={() => setViewMode(m)}
-                  className="p-2 rounded-lg transition-all"
-                  style={{
-                    background: viewMode === m ? 'var(--teal-dim)' : 'var(--dark-3)',
-                    color: viewMode === m ? 'var(--teal)' : 'var(--muted)',
-                  }}>
-                  <Icon size={13}/>
-                </button>
-              )
-            })}
-          </div>
-        </div>
+        <section className="premium-metrics animate-fade-up delay-1">
+          {[
+            { label: 'all works', value: counts.all.toString(), meta: 'files visible in archive' },
+            { label: 'public', value: publicCount.toString(), meta: 'share-ready surfaces' },
+            { label: 'private', value: privateCount.toString(), meta: 'hidden from view' },
+            { label: 'focus', value: filter.toUpperCase(), meta: 'current curation mode' },
+          ].map((item) => (
+            <article key={item.label} className="premium-metric">
+              <p className="premium-metric__label">{item.label}</p>
+              <p className="premium-metric__value">{item.value}</p>
+              <p className="premium-metric__meta">{item.meta}</p>
+            </article>
+          ))}
+        </section>
 
-        {/* Empty state */}
-        {displayWorks.length === 0 && (
-          <div className="rounded-2xl p-12 text-center"
-            style={{ border: '1px dashed rgba(45,212,191,0.1)', background: 'rgba(45,212,191,0.02)' }}>
-            <Grid size={24} className="mx-auto mb-3" style={{ color: 'var(--muted)', opacity: 0.35 }}/>
-            <p className="text-sm mono mb-1" style={{ color: 'var(--muted)' }}>
-              {filter !== 'all' ? `// no_${filter}_files` : '// no_works_yet'}
-            </p>
-            <p className="text-xs mb-4" style={{ color: 'rgba(255,255,255,0.2)' }}>
-              {isOwner ? 'Upload works from the dashboard.' : 'This creator has no public works yet.'}
-            </p>
-            {isOwner && (
-              <button onClick={() => setCurrentPage('dashboard')} className="btn-teal px-4 py-2 rounded-lg text-xs">
-                go_to_dashboard →
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Grid view */}
-        {viewMode === 'grid' && displayWorks.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {displayWorks.map((blob, i) => {
-              const fullName  = getBlobName(blob)
-              const shortName = getShortName(fullName)
-              const type  = getFileType(shortName)
-              const cfg   = typeConfig[type]
-              const Icon  = cfg.icon
-              const isPrivate = (visibility[fullName] ?? 'public') === 'private'
-              const blobUrl = walletAddress ? `${SHELBY_RPC}/v1/blobs/${walletAddress}/${fullName}` : ''
-              return (
-                <div key={fullName || i}
-                  className="card rounded-xl overflow-hidden cursor-pointer group relative"
-                  onClick={() => setSelectedBlob(blob)}>
-                  <div className="aspect-square flex items-center justify-center relative overflow-hidden"
-                    style={{ background: `${cfg.color}08` }}>
-                    {type === 'image' && blobUrl ? (
-                      <img src={blobUrl} alt={shortName} className="w-full h-full object-cover"
-                        onError={e => { e.currentTarget.style.display='none' }}/>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <Icon size={28} style={{ color: cfg.color, opacity: 0.5 }}/>
-                        <span className="text-xs mono" style={{ color: 'var(--muted)' }}>{cfg.label.toLowerCase()}</span>
-                      </div>
-                    )}
-                    {isPrivate && (
-                      <div className="absolute inset-0 flex items-center justify-center"
-                        style={{ background: 'rgba(4,9,9,0.75)', backdropFilter: 'blur(4px)' }}>
-                        <Lock size={20} style={{ color: 'var(--muted)' }}/>
-                      </div>
-                    )}
-                    {isOwner && (
-                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={e => { e.stopPropagation(); toggleVisibility(fullName) }}>
-                        <div className="p-1.5 rounded-lg"
-                          style={{ background: 'rgba(4,9,9,0.85)', border: '1px solid rgba(45,212,191,0.2)' }}>
-                          {isPrivate
-                            ? <EyeOff size={12} style={{ color: '#fb923c' }}/>
-                            : <Eye size={12} style={{ color: 'var(--teal)' }}/>
-                          }
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-3">
-                    <p className="text-xs mono truncate font-medium">{shortName}</p>
-                    <div className="flex items-center justify-between mt-1">
-                      <p className="text-xs mono" style={{ color: 'var(--muted)' }}>
-                        {blob.size != null ? fmtBytes(blob.size) : '—'}
-                      </p>
-                      <span className="text-xs mono px-1.5 py-0.5 rounded-full"
-                        style={{
-                          background: isPrivate ? 'rgba(251,146,60,0.1)' : 'var(--teal-dim)',
-                          color: isPrivate ? '#fb923c' : 'var(--teal)',
-                          fontSize: '9px',
-                        }}>
-                        {isPrivate ? 'private' : 'public'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* List view */}
-        {viewMode === 'list' && displayWorks.length > 0 && (
-          <div className="space-y-2">
-            {displayWorks.map((blob, i) => {
-              const fullName  = getBlobName(blob)
-              const shortName = getShortName(fullName)
-              const type  = getFileType(shortName)
-              const cfg   = typeConfig[type]
-              const Icon  = cfg.icon
-              const isPrivate = (visibility[fullName] ?? 'public') === 'private'
-              return (
-                <div key={fullName || i} className="card rounded-xl p-4 flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: `${cfg.color}12`, border: `1px solid ${cfg.color}20` }}>
-                    <Icon size={16} style={{ color: cfg.color }}/>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm mono truncate">{shortName}</p>
-                      {isPrivate && <Lock size={10} style={{ color: '#fb923c', flexShrink: 0 }}/>}
-                    </div>
-                    <p className="text-xs mono mt-0.5" style={{ color: 'var(--muted)' }}>
-                      {blob.size != null ? fmtBytes(blob.size) : '—'} · {blob.creationMicros != null ? fmtDate(blob.creationMicros) : '—'} ·{' '}
-                      <span style={{ color: blob.isWritten ? '#4ade80' : '#fb923c' }}>
-                        {blob.isWritten ? 'stored' : 'pending'}
-                      </span>
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {isOwner && (
-                      <button onClick={() => toggleVisibility(fullName)}
-                        className="p-1.5 rounded-lg transition-all"
-                        style={{
-                          background: isPrivate ? 'rgba(251,146,60,0.1)' : 'var(--teal-dim)',
-                          border: `1px solid ${isPrivate ? 'rgba(251,146,60,0.2)' : 'rgba(45,212,191,0.2)'}`,
-                        }}>
-                        {isPrivate
-                          ? <EyeOff size={12} style={{ color: '#fb923c' }}/>
-                          : <Eye size={12} style={{ color: 'var(--teal)' }}/>
-                        }
-                      </button>
-                    )}
-                    <ExternalLink size={12} style={{ color: 'var(--muted)' }}/>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* Lightbox */}
-        {selectedBlob && walletAddress && (() => {
-          const fullName  = getBlobName(selectedBlob)
-          const shortName = getShortName(fullName)
-          const type  = getFileType(shortName)
-          const cfg   = typeConfig[type]
-          const Icon  = cfg.icon
-          const blobUrl   = `${SHELBY_RPC}/v1/blobs/${walletAddress}/${fullName}`
-          const isPrivate = (visibility[fullName] ?? 'public') === 'private'
-          return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-6"
-              style={{ background: 'rgba(4,9,9,0.92)', backdropFilter: 'blur(16px)' }}
-              onClick={() => setSelectedBlob(null)}>
-              <div className="card rounded-2xl max-w-lg w-full overflow-hidden"
-                style={{ border: '1px solid rgba(45,212,191,0.15)' }}
-                onClick={e => e.stopPropagation()}>
-                <div className="aspect-video flex items-center justify-center"
-                  style={{ background: `${cfg.color}06` }}>
-                  {type === 'image' ? (
-                    <img src={blobUrl} alt={shortName} className="max-h-full max-w-full object-contain"/>
-                  ) : type === 'video' ? (
-                    <video src={blobUrl} controls className="max-h-full max-w-full"/>
-                  ) : type === 'music' ? (
-                    <div className="text-center p-8">
-                      <Icon size={40} style={{ color: cfg.color, opacity: 0.4, margin: '0 auto 12px' }}/>
-                      <audio src={blobUrl} controls className="w-full"/>
-                    </div>
+        {Object.entries(uploadProgress).length > 0 && (
+          <div className="upload-progress-stack animate-fade-up delay-1">
+            {Object.entries(uploadProgress).map(([name, status]) => (
+              <div key={name} className={`upload-progress-card upload-progress-card--${status.tone}`}>
+                <div className="upload-progress-card__icon">
+                  {status.tone === 'error' ? (
+                    <AlertCircle size={14} style={{ color: 'var(--danger)' }} />
+                  ) : status.tone === 'success' ? (
+                    <CheckCircle2 size={14} style={{ color: 'var(--success)' }} />
                   ) : (
-                    <div className="text-center p-8">
-                      <Icon size={40} style={{ color: cfg.color, opacity: 0.35, margin: '0 auto 12px' }}/>
-                      <p className="text-xs mono" style={{ color: 'var(--muted)' }}>preview not available</p>
-                    </div>
+                    <Loader size={14} className="animate-spin flex-shrink-0" style={{ color: 'var(--pink)' }} />
                   )}
                 </div>
-                <div className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-bold mono truncate">{shortName}</p>
-                    <span className="text-xs mono px-2 py-0.5 rounded-full ml-2 shrink-0"
-                      style={{
-                        background: isPrivate ? 'rgba(251,146,60,0.1)' : 'var(--teal-dim)',
-                        color: isPrivate ? '#fb923c' : 'var(--teal)',
-                      }}>
-                      {isPrivate ? 'private' : 'public'}
-                    </span>
-                  </div>
-                  <p className="text-xs mono" style={{ color: 'var(--muted)' }}>
-                    {selectedBlob.size != null ? fmtBytes(selectedBlob.size) : '—'} ·{' '}
-                    {selectedBlob.creationMicros != null ? fmtDate(selectedBlob.creationMicros) : '—'}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs truncate mb-1" style={{ color: 'var(--text-primary)' }}>
+                    {name}
                   </p>
-                  <div className="flex gap-2 mt-4">
-                    {isOwner && (
-                      <button onClick={() => toggleVisibility(fullName)}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs mono transition-all"
-                        style={{
-                          background: isPrivate ? 'rgba(251,146,60,0.1)' : 'var(--teal-dim)',
-                          color: isPrivate ? '#fb923c' : 'var(--teal)',
-                          border: `1px solid ${isPrivate ? 'rgba(251,146,60,0.2)' : 'rgba(45,212,191,0.2)'}`,
-                        }}>
-                        {isPrivate ? <><Unlock size={11}/> make_public</> : <><Lock size={11}/> make_private</>}
-                      </button>
-                    )}
-                    <a href={blobUrl} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs mono"
-                      style={{ background: 'var(--dark-3)', color: 'var(--muted)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <ExternalLink size={11}/> open_file
-                    </a>
-                    <button onClick={() => setSelectedBlob(null)}
-                      className="ml-auto px-3 py-2 rounded-lg text-xs mono"
-                      style={{ background: 'var(--dark-3)', color: 'var(--muted)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                      close
-                    </button>
+                  <p className="upload-progress-card__stage">{status.stage}</p>
+                  {status.detail && <p className="upload-progress-card__detail">{status.detail}</p>}
+                  <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--track)' }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${status.progress}%`,
+                        background: status.tone === 'error' ? 'var(--danger)' : status.tone === 'success' ? 'var(--success)' : 'var(--accent)',
+                      }}
+                    />
                   </div>
                 </div>
               </div>
+            ))}
+          </div>
+        )}
+
+        <section className="toolbar-band animate-fade-up delay-1">
+          <div className="toolbar-group">
+            {filters.map((entry) => (
+              <button key={entry.key} onClick={() => setFilter(entry.key)} className={`toolbar-chip ${filter === entry.key ? 'toolbar-chip--active' : ''}`}>
+                {entry.label} ({counts[entry.key]})
+              </button>
+            ))}
+          </div>
+          <div className="toolbar-group">
+            <button onClick={() => setViewMode('grid')} className={`toolbar-chip ${viewMode === 'grid' ? 'toolbar-chip--active' : ''}`}>
+              <Grid size={14} /> Grid
+            </button>
+            <button onClick={() => setViewMode('list')} className={`toolbar-chip ${viewMode === 'list' ? 'toolbar-chip--active' : ''}`}>
+              <List size={14} /> List
+            </button>
+          </div>
+        </section>
+
+        <section className="animate-fade-up delay-2">
+          {isLoading ? (
+            <div className="flex justify-center py-16">
+              <div className="w-7 h-7 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'var(--pink)', borderTopColor: 'transparent' }} />
             </div>
-          )
-        })()}
+          ) : filtered.length === 0 ? (
+            <div className="premium-surface premium-surface--padded">
+              <p className="empty-state-title">No files found</p>
+              <p className="empty-state-subtitle">
+                {filter === 'all' ? 'Upload a file to start building your gallery.' : `No ${filter} files match this view.`}
+              </p>
+            </div>
+          ) : viewMode === 'grid' ? (
+            <div className="gallery-grid-premium">
+              {filtered.map((blob, index) => {
+                const name = getBlobName(blob)
+                const isPublic = visibility[name] !== false
+                return (
+                  <article key={name} className={`gallery-card-premium ${index === 0 ? 'gallery-card-premium--featured' : ''}`}>
+                    <div className="gallery-card-premium__media" onClick={() => setLightbox(index)}>
+                      <FileThumbnail account={walletAddress!} blob={blob} />
+                    </div>
+                    <div className="gallery-card-premium__body">
+                      <div className="gallery-card-premium__header">
+                        <div>
+                          <p className="gallery-card-premium__title">{name.split('/').pop()}</p>
+                          <p className="gallery-card-premium__meta">
+                            {formatBytes(blob.size ?? 0)}
+                            {blob.creationMicros ? ` / ${formatDate(blob.creationMicros)}` : ''}
+                          </p>
+                        </div>
+                        <button onClick={() => toggleVisibility(name)} className="btn-ghost px-3 py-2 rounded-full text-xs inline-flex items-center gap-1.5">
+                          {isPublic ? <Eye size={12} /> : <EyeOff size={12} />}
+                          {isPublic ? 'Public' : 'Private'}
+                        </button>
+                      </div>
+                      <div className="muted-dot-list">
+                        <span>{getFileType(name)}</span>
+                        <span>{index === 0 ? 'featured surface' : 'archive object'}</span>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="editorial-stack">
+              {filtered.map((blob, index) => {
+                const name = getBlobName(blob)
+                const isPublic = visibility[name] !== false
+                return (
+                  <div key={`${name}-${index}`} className="editorial-row cursor-pointer" onClick={() => setLightbox(index)}>
+                    <div className="editorial-row__icon" style={{ background: `var(--cat-${getFileType(name)}-bg, var(--cat-image-bg))` }}>
+                      <FileIcon name={name} size={15} />
+                    </div>
+                    <div className="editorial-row__meta">
+                      <p className="editorial-row__title">{name.split('/').pop()}</p>
+                      <p className="editorial-row__sub">
+                        {formatBytes(blob.size ?? 0)}
+                        {blob.creationMicros ? ` / ${formatDate(blob.creationMicros)}` : ''}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        toggleVisibility(name)
+                      }}
+                      className="btn-ghost px-3 py-2 rounded-full text-xs inline-flex items-center gap-1.5"
+                    >
+                      {isPublic ? <Eye size={12} /> : <EyeOff size={12} />}
+                      {isPublic ? 'Public' : 'Private'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
+        {lightbox !== null && filtered[lightbox] && (
+          <div className="lightbox-shell" onClick={() => setLightbox(null)}>
+            <button className="absolute top-4 right-4 w-11 h-11 flex items-center justify-center rounded-full" style={{ background: 'oklch(100% 0 0 / 0.1)', backdropFilter: 'blur(8px)' }} onClick={() => setLightbox(null)} aria-label="Close lightbox">
+              <X size={18} className="text-white" />
+            </button>
+            {lightbox > 0 && (
+              <button className="absolute left-4 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full" style={{ background: 'oklch(100% 0 0 / 0.1)', backdropFilter: 'blur(8px)' }} onClick={(event) => { event.stopPropagation(); setLightbox((current) => (current ?? 1) - 1) }} aria-label="Previous">
+                <ChevronLeft size={20} className="text-white" />
+              </button>
+            )}
+            {lightbox < filtered.length - 1 && (
+              <button className="absolute right-4 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full" style={{ background: 'oklch(100% 0 0 / 0.1)', backdropFilter: 'blur(8px)' }} onClick={(event) => { event.stopPropagation(); setLightbox((current) => (current ?? 0) + 1) }} aria-label="Next">
+                <ChevronRight size={20} className="text-white" />
+              </button>
+            )}
+            <div className="lightbox-media" onClick={(event) => event.stopPropagation()}>
+              <FileThumbnail account={walletAddress!} blob={filtered[lightbox]} />
+            </div>
+            <div className="lightbox-meta" onClick={(event) => event.stopPropagation()}>
+              <div className="min-w-0">
+                <p className="text-sm text-white truncate">{getBlobName(filtered[lightbox]).split('/').pop()}</p>
+                <p className="text-xs font-mono" style={{ color: 'var(--muted)' }}>
+                  {formatBytes(filtered[lightbox].size ?? 0)}
+                  {filtered[lightbox].creationMicros ? ` / ${formatDate(filtered[lightbox].creationMicros)}` : ''}
+                </p>
+              </div>
+              <span className="text-xs px-2 py-1 rounded-full pill-soft" style={{ color: visibility[getBlobName(filtered[lightbox])] !== false ? 'var(--success)' : 'var(--text-muted)' }}>
+                {visibility[getBlobName(filtered[lightbox])] !== false ? 'public' : 'private'}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

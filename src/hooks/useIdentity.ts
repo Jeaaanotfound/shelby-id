@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react'
+import { useAppSettings } from '../context/AppSettings'
+import { isValidAptosAddress } from '../lib/aptos'
+import { getBlobReadUrl, getIdentityBlobName, getShelbyApiKey } from '../lib/shelby'
 
 export interface Identity {
   version?: string
@@ -18,10 +21,8 @@ interface IdentityState {
   error: string | null
 }
 
-const SHELBY_RPC = 'https://api.testnet.shelby.xyz/shelby'
-const API_KEY = import.meta.env.VITE_SHELBY_API_KEY as string | undefined
-
 export function useIdentity(walletAddress: string | null): IdentityState {
+  const { networkKey } = useAppSettings()
   const [state, setState] = useState<IdentityState>({
     data: null,
     isLoading: false,
@@ -31,20 +32,19 @@ export function useIdentity(walletAddress: string | null): IdentityState {
   })
 
   useEffect(() => {
-    if (!walletAddress) {
+    if (!walletAddress || !isValidAptosAddress(walletAddress)) {
       setState({ data: null, isLoading: false, isError: false, notFound: false, error: null })
       return
     }
 
-    // AbortController supaya fetch dibatalkan kalau component unmount / walletAddress berubah
     const controller = new AbortController()
+    const url = getBlobReadUrl(walletAddress, getIdentityBlobName(walletAddress), networkKey)
 
-    const url = `${SHELBY_RPC}/v1/blobs/${walletAddress}/shelbyid/${walletAddress}/identity.json`
+    setState((prev) => ({ ...prev, isLoading: true, isError: false, notFound: false, error: null }))
 
-    setState(prev => ({ ...prev, isLoading: true, isError: false, notFound: false, error: null }))
-
-    const headers: Record<string, string> = { 'Accept': 'application/json' }
-    if (API_KEY) headers['Authorization'] = `Bearer ${API_KEY}`
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    const apiKey = getShelbyApiKey(networkKey)
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`
 
     fetch(url, { headers, signal: controller.signal })
       .then(async (res) => {
@@ -52,19 +52,22 @@ export function useIdentity(walletAddress: string | null): IdentityState {
           setState({ data: null, isLoading: false, isError: false, notFound: true, error: null })
           return
         }
-        if (!res.ok) throw new Error(`Shelby RPC error: ${res.status} ${res.statusText}`)
-        const text = await res.text()
-        const parsed = JSON.parse(text) as Identity
+
+        if (!res.ok) {
+          throw new Error(`Shelby RPC error: ${res.status} ${res.statusText}`)
+        }
+
+        const parsed = JSON.parse(await res.text()) as Identity
         setState({ data: parsed, isLoading: false, isError: false, notFound: false, error: null })
       })
       .catch((err: Error) => {
-        if (err.name === 'AbortError') return // ignore cancelled requests
+        if (err.name === 'AbortError') return
         console.error('[useIdentity] fetch failed:', err)
         setState({ data: null, isLoading: false, isError: true, notFound: false, error: err.message })
       })
 
     return () => controller.abort()
-  }, [walletAddress]) // hanya re-fetch kalau walletAddress berubah
+  }, [networkKey, walletAddress])
 
   return state
 }

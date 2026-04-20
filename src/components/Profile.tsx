@@ -1,259 +1,347 @@
-import {
-  ExternalLink, Copy, Share2, Twitter,
-  Music, Image, FileText, Video,
-  CheckCircle, AlertCircle,
-} from 'lucide-react'
+import { ExternalLink, Copy, Share2, Twitter, Music, Image, FileText, Video, CheckCircle, AlertCircle, Camera, ArrowRight } from 'lucide-react'
 import { useState } from 'react'
 import { useAccountBlobs } from '@shelby-protocol/react'
-import { shelbyClient } from '../lib/shelby'
+import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
+import { useAppSettings } from '../context/AppSettings'
+import {
+  getAptosAccountExplorerUrl,
+  getShelbyBlobExplorerUrl,
+  getShelbyExplorerUrl,
+  getWalletAddress,
+  isValidAptosAddress,
+  sameAddress,
+} from '../lib/aptos'
+import { isReservedBlobPath } from '../lib/shelby'
 import { useIdentity } from '../hooks/useIdentity'
 import { ProfileSkeleton } from './Skeleton'
+import { useAvatar } from '../hooks/useAvatar'
+import AvatarPicker from './AvatarPicker'
+import { useWallet as useAptosWallet } from '@aptos-labs/wallet-adapter-react'
 
-interface ProfileProps { walletAddress: string | null }
-
-interface ShelbyBlob {
-  blobName?: string; name?: string; blobNameSuffix?: string
-  size?: number; creationMicros?: number; isWritten?: boolean
+interface ProfileProps {
+  walletAddress: string | null
+  setCurrentPage: (page: 'home' | 'profile' | 'create' | 'dashboard' | 'gallery') => void
 }
 
-const categoryIcons: Record<string, React.ElementType> = {
-  art: Image, music: Music, writing: FileText, video: Video,
+type ShelbyBlob = BlobMetadata
+
+function getBlobName(blob: ShelbyBlob): string {
+  return blob.blobNameSuffix ?? String(blob.name) ?? ''
 }
-const categoryColors: Record<string, string> = {
-  art: '#2dd4bf', music: '#818cf8', writing: '#fb923c', video: '#f472b6',
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function guessCat(name: string) {
-  const l = name.toLowerCase()
-  if (l.match(/\.(jpg|jpeg|png|gif|webp|svg|avif)$/)) return 'art'
-  if (l.match(/\.(mp3|wav|flac|aac|ogg)$/))           return 'music'
-  if (l.match(/\.(mp4|mov|avi|mkv|webm)$/))           return 'video'
-  return 'writing'
+function formatDate(micros: number): string {
+  return new Date(micros / 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
-function fmtBytes(b: number) {
-  if (b === 0) return '0 B'
-  if (b < 1024) return `${b} B`
-  if (b < 1024*1024) return `${(b/1024).toFixed(1)} KB`
-  return `${(b/1024/1024).toFixed(1)} MB`
+
+function getFileType(name: string) {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif'].includes(ext)) return 'image'
+  if (['mp3', 'wav', 'flac', 'aac', 'ogg'].includes(ext)) return 'music'
+  if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'video'
+  return 'doc'
 }
-function fmtDate(m: number) { return new Date(m/1000).toISOString().split('T')[0] }
-function getBlobName(b: ShelbyBlob) { return b.blobName ?? b.name ?? b.blobNameSuffix ?? '' }
 
-export default function Profile({ walletAddress }: ProfileProps) {
-  const [copied, setCopied]           = useState(false)
-  const [copiedShare, setCopiedShare] = useState(false)
+function getFileIcon(name: string): React.ElementType {
+  const type = getFileType(name)
+  const icons = { image: Image, music: Music, video: Video, doc: FileText }
+  return icons[type as keyof typeof icons]
+}
 
-  const { data: identity, isLoading: idLoading, notFound: idNotFound } = useIdentity(walletAddress)
-  const { data: raw, isLoading: bLoading, isError, error, refetch } =
-    useAccountBlobs({ client: shelbyClient, account: walletAddress ?? '', enabled: !!walletAddress } as any)
+function getFileColor(name: string) {
+  const type = getFileType(name)
+  const colors = { image: 'var(--cat-image)', music: 'var(--cat-music)', video: 'var(--cat-video)', doc: 'var(--cat-doc)' }
+  return colors[type as keyof typeof colors]
+}
 
-  const blobs: ShelbyBlob[] = (raw as ShelbyBlob[] | undefined) ?? []
-  const works = blobs.filter(b => !getBlobName(b).includes('identity.json'))
-  const totalStorage = fmtBytes(works.reduce((a, b) => a + (b.size ?? 0), 0))
+function getFileBgColor(name: string) {
+  const type = getFileType(name)
+  const colors = { image: 'var(--cat-image-bg)', music: 'var(--cat-music-bg)', video: 'var(--cat-video-bg)', doc: 'var(--cat-doc-bg)' }
+  return colors[type as keyof typeof colors]
+}
 
-  if (!walletAddress) return (
-    <div className="min-h-screen flex items-center justify-center px-6">
-      <div className="text-center">
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
-          style={{ background: 'var(--dark-3)', border: '1px solid rgba(45,212,191,0.1)' }}>
-          <AlertCircle size={24} style={{ color: 'var(--muted)' }} />
-        </div>
-        <p className="text-sm mono mb-1" style={{ color: 'var(--teal)' }}>$ wallet_not_connected</p>
-        <p className="text-xs" style={{ color: 'var(--muted)' }}>Connect your wallet to view profile.</p>
-      </div>
-    </div>
-  )
+export default function Profile({ walletAddress, setCurrentPage }: ProfileProps) {
+  const { networkConfig, networkKey, shelbyClient } = useAppSettings()
+  const [copied, setCopied] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
 
-  if (idLoading || bLoading) return <ProfileSkeleton />
+  const { account } = useAptosWallet()
+  const connectedAddress = getWalletAddress(account)
+  const isOwner = sameAddress(connectedAddress, walletAddress)
 
-  if (isError) return (
-    <div className="min-h-screen flex items-center justify-center px-6">
-      <div className="text-center">
-        <AlertCircle size={22} className="mx-auto mb-3" style={{ color: '#f87171' }} />
-        <p className="text-xs mono mb-2" style={{ color: '#f87171' }}>$ fetch_failed</p>
-        <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>{(error as Error)?.message}</p>
-        <button onClick={() => refetch()} className="btn-outline text-xs mono px-4 py-2 rounded-lg">retry_</button>
-      </div>
-    </div>
-  )
+  const { data: identity, isLoading: identityLoading, notFound } = useIdentity(walletAddress)
+  const { avatarUrl, refetch: refetchAvatar } = useAvatar(walletAddress)
 
-  const displayName = identity?.displayName ?? 'anonymous'
-  const initial = displayName.charAt(0).toUpperCase()
-  const hasIdentity = !!identity && !idNotFound
+  const { data: rawBlobs, isLoading: blobsLoading } = useAccountBlobs({
+    client: shelbyClient,
+    account: walletAddress ?? '',
+    enabled: !!walletAddress && isValidAptosAddress(walletAddress),
+  })
 
-  return (
-    <div className="pt-20 min-h-screen">
-      <div className="max-w-3xl mx-auto px-6 pb-24">
+  const blobs: ShelbyBlob[] = rawBlobs ?? []
+  const isLoading = identityLoading || blobsLoading
+  const works = blobs.filter((blob) => !isReservedBlobPath(getBlobName(blob)))
+  const totalStorage = works.reduce((acc, b) => acc + b.size, 0)
 
-        {idNotFound && (
-          <div className="mt-6 mb-4 p-3 rounded-xl flex items-center gap-2"
-            style={{ background: 'rgba(251,146,60,0.06)', border: '1px solid rgba(251,146,60,0.18)' }}>
-            <AlertCircle size={13} style={{ color: '#fb923c', flexShrink: 0 }} />
-            <p className="text-xs mono" style={{ color: '#fb923c' }}>
-              no_shelby_id_found: this wallet hasn't minted a ShelbyID yet
-            </p>
-          </div>
-        )}
-
-        {/* Profile card */}
-        <div className="animate-fade-up delay-1 mt-6 rounded-2xl overflow-hidden"
-          style={{ background: 'var(--dark-2)', border: '1px solid rgba(45,212,191,0.12)' }}>
-          {/* Banner */}
-          <div className="h-14 relative overflow-hidden"
-            style={{ background: 'linear-gradient(135deg, #1a1a1f 0%, #141418 50%, rgba(45,212,191,0.12) 100%)' }}>
-            </div>
-
-          <div className="px-6 pb-6">
-            <div className="flex items-end justify-between -mt-8 mb-4">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold mono"
-                style={{
-                  background: 'linear-gradient(135deg, var(--dark-3) 0%, rgba(255,105,176,0.1) 100%)',
-                  border: '2px solid rgba(255,105,176,0.25)',
-                  color: 'var(--teal)',
-                  boxShadow: '0 4px 20px rgba(255,105,176,0.1)',
-                }}>
-                {initial}
-              </div>
-              <button onClick={() => {
-                const url = `${window.location.origin}?profile=${walletAddress}`
-                navigator.clipboard.writeText(url)
-                setCopiedShare(true)
-                setTimeout(() => setCopiedShare(false), 2000)
-              }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs mono transition-all"
-                style={{
-                  background: copiedShare ? 'var(--teal-dim)' : 'var(--dark-3)',
-                  border: `1px solid ${copiedShare ? 'rgba(45,212,191,0.3)' : 'rgba(45,212,191,0.1)'}`,
-                  color: copiedShare ? 'var(--teal)' : 'var(--muted)',
-                }}>
-                {copiedShare ? <CheckCircle size={11} /> : <Share2 size={11} />}
-                {copiedShare ? 'copied!' : 'share_profile'}
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <h2 className="text-xl font-bold mono">{displayName}</h2>
-              {hasIdentity && (
-                <span className="text-xs mono px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--teal-dim)', color: 'var(--teal)', border: '1px solid rgba(45,212,191,0.2)' }}>
-                  ✓ verified
-                </span>
-              )}
-              {identity?.category && (
-                <span className="text-xs mono px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--dark-3)', color: 'var(--muted)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  {identity.category}
-                </span>
-              )}
-            </div>
-
-            <button onClick={copyAddress}
-              className="flex items-center gap-1.5 text-xs mono mb-3 transition-colors"
-              style={{ color: copied ? 'var(--teal)' : 'var(--muted)' }}>
-              {copied ? <CheckCircle size={10} /> : <Copy size={10} />}
-              {walletAddress.slice(0, 12)}...{walletAddress.slice(-8)}
-            </button>
-
-            {identity?.bio && (
-              <p className="text-sm mb-3 leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                {identity.bio}
-              </p>
-            )}
-
-            <div className="flex items-center gap-4 flex-wrap">
-              {identity?.twitter && (
-                <a href={`https://twitter.com/${identity.twitter.replace('@','')}`}
-                  target="_blank" rel="noreferrer"
-                  className="flex items-center gap-1.5 text-xs mono transition-colors"
-                  style={{ color: 'var(--muted)' }}
-                  onMouseEnter={e => (e.currentTarget.style.color='var(--teal)')}
-                  onMouseLeave={e => (e.currentTarget.style.color='var(--muted)')}>
-                  <Twitter size={11}/> {identity.twitter}
-                </a>
-              )}
-              <a href={`https://explorer.aptoslabs.com/account/${walletAddress}?network=testnet`}
-                target="_blank" rel="noreferrer"
-                className="flex items-center gap-1.5 text-xs mono transition-colors"
-                style={{ color: 'var(--muted)' }}
-                onMouseEnter={e => (e.currentTarget.style.color='var(--teal)')}
-                onMouseLeave={e => (e.currentTarget.style.color='var(--muted)')}>
-                <ExternalLink size={11}/> aptos
-              </a>
-              <a href="https://explorer.shelby.xyz/testnet"
-                target="_blank" rel="noreferrer"
-                className="flex items-center gap-1.5 text-xs mono transition-colors"
-                style={{ color: 'var(--muted)' }}
-                onMouseEnter={e => (e.currentTarget.style.color='var(--teal)')}
-                onMouseLeave={e => (e.currentTarget.style.color='var(--muted)')}>
-                <ExternalLink size={11}/> shelby
-              </a>
-            </div>
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="animate-fade-up delay-2 grid grid-cols-3 gap-3 mt-4">
-          {[
-            { label: 'blobs',   value: blobs.length.toString() },
-            { label: 'storage', value: totalStorage },
-            { label: 'network', value: 'testnet' },
-          ].map(s => (
-            <div key={s.label} className="card-stat rounded-xl p-4 text-center">
-              <p className="text-lg font-bold mono" style={{ color: 'var(--teal)' }}>{s.value}</p>
-              <p className="text-xs mono mt-1" style={{ color: 'var(--muted)' }}>{s.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Works */}
-        <div className="animate-fade-up delay-3 mt-6">
-          <p className="text-xs mono mb-3" style={{ color: 'var(--muted)' }}>
-            $ ls ./blobs <span style={{ color: 'rgba(255,255,255,0.2)' }}>({works.length} files)</span>
-          </p>
-          {works.length === 0 ? (
-            <div className="rounded-2xl p-10 text-center"
-              style={{ border: '1px dashed rgba(45,212,191,0.12)', background: 'rgba(45,212,191,0.02)' }}>
-              <p className="text-xs mono mb-1" style={{ color: 'var(--muted)' }}>// no_blobs_found</p>
-              <p className="text-xs" style={{ color: 'rgba(255,255,255,0.18)' }}>Upload your first work to see it here.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {works.map((blob, i) => {
-                const blobName  = getBlobName(blob)
-                const shortName = blobName.split('/').pop() || blobName
-                const cat   = guessCat(shortName)
-                const Icon  = categoryIcons[cat] || FileText
-                const color = categoryColors[cat] || 'var(--teal)'
-                return (
-                  <div key={blobName || i} className="card rounded-xl p-4 flex items-center gap-4" style={{ cursor: "pointer", transition: "all 0.2s ease" }} onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = "translateX(4px)"; (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(255,105,176,0.28)"; }} onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = ""; (e.currentTarget as HTMLDivElement).style.borderColor = ""; }}>
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ background: `${color}12`, border: `1px solid ${color}20` }}>
-                      <Icon size={15} style={{ color }} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm mono truncate">{shortName}</p>
-                      <p className="text-xs mono mt-0.5" style={{ color: 'var(--muted)' }}>
-                        {blob.size != null ? fmtBytes(blob.size) : '—'} ·{' '}
-                        {blob.creationMicros != null ? fmtDate(blob.creationMicros) : '—'} ·{' '}
-                        <span style={{ color: blob.isWritten ? '#4ade80' : '#fb923c' }}>
-                          {blob.isWritten ? 'stored' : 'pending'}
-                        </span>
-                      </p>
-                    </div>
-                    <ExternalLink size={12} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-
-  function copyAddress() {
-    navigator.clipboard.writeText(walletAddress!)
+  const copyAddress = () => {
+    if (!walletAddress) return
+    navigator.clipboard.writeText(walletAddress)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  const shareProfile = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('profile', walletAddress ?? '')
+    url.searchParams.set('network', networkKey)
+    navigator.clipboard.writeText(url.toString())
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
+
+  if (!walletAddress) {
+    return (
+      <div className="premium-shell flex items-center justify-center">
+        <div className="max-w-md w-full premium-surface premium-surface--padded">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-8" style={{ background: 'var(--accent-dim)', border: '1px solid var(--accent-border)' }}>
+            <AlertCircle size={22} style={{ color: 'var(--accent)' }} />
+          </div>
+          <p className="text-[11px] font-mono tracking-widest uppercase mb-3" style={{ color: 'var(--accent)' }}>profile</p>
+          <h1 style={{ fontFamily: 'Geist, sans-serif', fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 700, letterSpacing: '-0.035em', color: 'var(--text-primary)', lineHeight: 1.1, marginBottom: '16px' }}>
+            No wallet
+            <br />
+            connected.
+          </h1>
+          <p style={{ fontSize: '15px', color: 'var(--text-secondary)', lineHeight: 1.65, marginBottom: '36px' }}>
+            Connect your wallet to view your profile, or search for any address from the header.
+          </p>
+          <button onClick={() => setCurrentPage('home')} className="btn-pink px-6 py-3 rounded-full text-sm font-semibold">Connect Wallet</button>
+        </div>
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return <ProfileSkeleton />
+  }
+
+  if (notFound || !identity) {
+    return (
+      <div className="premium-shell flex items-center justify-center">
+        <div className="text-center max-w-sm premium-surface premium-surface--padded">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+            <AlertCircle size={22} style={{ color: 'var(--text-muted)' }} />
+          </div>
+          <p className="font-semibold mb-2" style={{ color: 'var(--text-primary)', fontSize: '15px' }}>No ShelbyID found</p>
+          <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
+            {walletAddress.slice(0, 8)}...{walletAddress.slice(-6)} has not minted a ShelbyID yet.
+          </p>
+          {isOwner ? (
+            <button onClick={() => setCurrentPage('create')} className="btn-pink px-6 py-2.5 rounded-full text-sm font-semibold inline-block">
+              Mint ShelbyID
+            </button>
+          ) : (
+            <button onClick={() => setCurrentPage('home')} className="btn-ghost px-6 py-2.5 rounded-full text-sm inline-block">
+              Back Home
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const initials = identity.displayName?.[0]?.toUpperCase() ?? '?'
+
+  return (
+    <>
+      <div className="premium-shell">
+        <div className="premium-frame">
+          <section className="premium-hero animate-fade-up">
+            <div className="premium-hero__grid">
+              <div>
+              <span className="premium-kicker">Identity Dossier</span>
+              <h1 className="premium-title premium-title--wide">{identity.displayName}</h1>
+                <p className="premium-copy">{identity.bio || 'A verified Shelby identity with a portable archive of published work.'}</p>
+                <div className="premium-meta-row">
+                  <span className="premium-chip premium-chip--accent">
+                    <CheckCircle size={12} /> verified
+                  </span>
+                  <span className="premium-chip">{identity.category}</span>
+                  <span className="premium-chip">{networkConfig.label}</span>
+                </div>
+              </div>
+              <div className="curation-panel">
+                <div className="identity-stage">
+                  <div className="identity-stage__avatar" style={{ padding: 0 }}>
+                    {avatarUrl ? <img src={avatarUrl} alt={identity.displayName ?? 'avatar'} className="w-full h-full object-cover" /> : initials}
+                  </div>
+                  <div>
+                    <h2 className="identity-stage__title">{identity.displayName}</h2>
+                    <p className="identity-stage__sub">{walletAddress.slice(0, 12)}...{walletAddress.slice(-8)}</p>
+                  </div>
+                </div>
+                <div className="action-row">
+                  <button onClick={copyAddress} className="btn-ghost px-4 py-3 rounded-full text-sm inline-flex items-center gap-2">
+                    {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
+                    {copied ? 'Copied' : 'Copy address'}
+                  </button>
+                  <button onClick={shareProfile} className="btn-ghost px-4 py-3 rounded-full text-sm inline-flex items-center gap-2">
+                    <Share2 size={14} /> {linkCopied ? 'Copied' : 'Share'}
+                  </button>
+                  {isOwner && (
+                    <button onClick={() => setAvatarPickerOpen(true)} className="btn-pink px-4 py-3 rounded-full text-sm inline-flex items-center gap-2">
+                      <Camera size={14} /> Avatar
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="premium-metrics animate-fade-up delay-1">
+            {[
+              { label: 'works', value: works.length.toString(), meta: 'published files' },
+              { label: 'storage', value: formatBytes(totalStorage), meta: 'occupied on Shelby' },
+              { label: 'network', value: networkConfig.label, meta: networkConfig.badge },
+            ].map((item) => (
+              <article key={item.label} className="premium-metric">
+                <p className="premium-metric__label">{item.label}</p>
+                <p className="premium-metric__value">{item.value}</p>
+                <p className="premium-metric__meta">{item.meta}</p>
+              </article>
+            ))}
+          </section>
+
+          <section className="premium-grid animate-fade-up delay-2">
+            <div className="premium-surface premium-surface--padded">
+                <div className="premium-section-head">
+                  <div>
+                    <p className="section-kicker">Public archive</p>
+                    <h2>Published works</h2>
+                  </div>
+                <p>Everything below reads like a clean portfolio inventory.</p>
+              </div>
+
+              {works.length === 0 ? (
+                <div className="premium-surface premium-surface--padded" style={{ background: 'color-mix(in oklch, var(--bg-elevated) 92%, transparent)' }}>
+                  <p className="empty-state-title">No public works yet</p>
+                  <p className="empty-state-subtitle">This profile has not uploaded any portfolio files.</p>
+                </div>
+              ) : (
+                <div className="editorial-stack">
+                  <div className="premium-surface premium-surface--padded" style={{ background: 'color-mix(in oklch, var(--bg-elevated) 94%, transparent)' }}>
+                    <p className="section-kicker">Profile note</p>
+                    <p className="premium-copy" style={{ marginTop: '10px', fontSize: '14px' }}>
+                      {identity.bio || `${identity.displayName} is using ShelbyID as a clear, verifiable identity layer for publishing work.`}
+                    </p>
+                  </div>
+                  {works.map((blob) => {
+                    const name = getBlobName(blob)
+                    const FileIcon = getFileIcon(name)
+                    return (
+                      <div key={name} className="editorial-row">
+                        <div className="editorial-row__icon" style={{ background: getFileBgColor(name) }}>
+                          <FileIcon size={15} style={{ color: getFileColor(name) }} />
+                        </div>
+                        <div className="editorial-row__meta">
+                          <p className="editorial-row__title">{name.split('/').pop()}</p>
+                          <p className="editorial-row__sub">
+                            {blob.size ? formatBytes(blob.size) : ''}
+                            {blob.creationMicros ? ` / ${formatDate(blob.creationMicros)}` : ''}
+                            {blob.isWritten ? ' / stored' : ''}
+                          </p>
+                        </div>
+                        <a href={getShelbyBlobExplorerUrl(walletAddress, name, networkKey)} target="_blank" rel="noopener noreferrer" className="btn-ghost px-3 py-2 rounded-full text-xs inline-flex items-center gap-1.5">
+                          View <ExternalLink size={12} />
+                        </a>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="editorial-stack">
+              <div className="premium-surface premium-surface--padded">
+                <div className="premium-section-head">
+                  <div>
+                    <p className="section-kicker">Presence</p>
+                    <h2>Connected links</h2>
+                  </div>
+                </div>
+                <div className="editorial-stack">
+                  {identity.twitter && (
+                    <a href={`https://x.com/${identity.twitter}`} target="_blank" rel="noopener noreferrer" className="editorial-row">
+                      <div className="editorial-row__meta">
+                        <p className="editorial-row__title">@{identity.twitter}</p>
+                        <p className="editorial-row__sub">Twitter / X profile</p>
+                      </div>
+                      <Twitter size={14} style={{ color: 'var(--text-muted)' }} />
+                    </a>
+                  )}
+                  <a href={getAptosAccountExplorerUrl(walletAddress, networkKey)} target="_blank" rel="noopener noreferrer" className="editorial-row">
+                    <div className="editorial-row__meta">
+                      <p className="editorial-row__title">{networkConfig.label} account</p>
+                      <p className="editorial-row__sub">Open on Aptos explorer</p>
+                    </div>
+                    <ExternalLink size={14} style={{ color: 'var(--text-muted)' }} />
+                  </a>
+                  <a href={getShelbyExplorerUrl(networkKey)} target="_blank" rel="noopener noreferrer" className="editorial-row">
+                    <div className="editorial-row__meta">
+                      <p className="editorial-row__title">Shelby Explorer</p>
+                      <p className="editorial-row__sub">Network and blob inspection</p>
+                    </div>
+                    <ExternalLink size={14} style={{ color: 'var(--text-muted)' }} />
+                  </a>
+                </div>
+              </div>
+
+              <div className="premium-surface premium-surface--padded">
+                <div className="premium-section-head">
+                  <div>
+                    <p className="section-kicker">Signal quality</p>
+                    <h2>Identity posture</h2>
+                  </div>
+                </div>
+                <div className="editorial-stack">
+                  <div className="premium-surface premium-surface--padded" style={{ background: 'color-mix(in oklch, var(--bg-elevated) 94%, transparent)' }}>
+                    <div className="muted-dot-list">
+                      <span>{identity.category}</span>
+                      <span>{works.length} archive items</span>
+                      <span>{networkConfig.label}</span>
+                    </div>
+                  </div>
+                  <button onClick={() => setCurrentPage('gallery')} className="editorial-row text-left">
+                      <div className="editorial-row__meta">
+                        <p className="editorial-row__title">Open gallery</p>
+                        <p className="editorial-row__sub">View the full public archive in gallery mode.</p>
+                      </div>
+                    <ArrowRight size={14} style={{ color: 'var(--text-muted)' }} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      {avatarPickerOpen && walletAddress && (
+        <AvatarPicker
+          walletAddress={walletAddress}
+          currentAvatarUrl={avatarUrl}
+          onClose={() => setAvatarPickerOpen(false)}
+          onSuccess={() => {
+            refetchAvatar()
+          }}
+        />
+      )}
+    </>
+  )
 }
