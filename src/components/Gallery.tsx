@@ -99,7 +99,7 @@ export default function Gallery({ walletAddress }: GalleryProps) {
   const [uploadProgress, setUploadProgress] = useState<Record<string, UploadCardState>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const { account, network, signTransaction } = useAptosWallet()
+  const { account, network, signAndSubmitTransaction } = useAptosWallet()
   const connectedAddress = getWalletAddress(account)
   const { data: identity } = useIdentity(walletAddress)
   const { avatarUrl } = useAvatar(walletAddress)
@@ -177,7 +177,7 @@ export default function Gallery({ walletAddress }: GalleryProps) {
   }
 
   const handleUpload = async (files: FileList | null) => {
-    if (!files || !walletAddress || !connectedAddress || !signTransaction) return
+    if (!files || !walletAddress || !connectedAddress || !signAndSubmitTransaction) return
     if (!sameAddress(connectedAddress, walletAddress)) {
       notify({
         tone: 'error',
@@ -234,7 +234,7 @@ export default function Gallery({ walletAddress }: GalleryProps) {
 
       const result = await uploadShelbyBlobsWithWallet({
         walletAddress,
-        signTransaction,
+        signAndSubmitTransaction,
         blobs: preparedBlobs.map(({ blobName, blobData }) => ({ blobName, blobData })),
         expirationMicros: expiry,
         networkKey,

@@ -39,7 +39,7 @@ export default function AvatarPicker({ walletAddress, currentAvatarUrl, onClose,
   const [errorMsg, setErrorMsg] = useState('')
   const [isDragging, setIsDragging] = useState(false)
 
-  const { account, network, signTransaction } = useAptosWallet()
+  const { account, network, signAndSubmitTransaction } = useAptosWallet()
 
   const handleFile = (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -91,7 +91,7 @@ export default function AvatarPicker({ walletAddress, currentAvatarUrl, onClose,
   }
 
   const handleUpload = async () => {
-    if (!account || !signTransaction) return
+    if (!account || !signAndSubmitTransaction) return
     if (!previewFile && selectedPreset === null) return
 
     setUploadState('uploading')
@@ -120,7 +120,7 @@ export default function AvatarPicker({ walletAddress, currentAvatarUrl, onClose,
 
       const result = await uploadShelbyBlobsWithWallet({
         walletAddress,
-        signTransaction,
+        signAndSubmitTransaction,
         blobs: [{ blobName: getAvatarBlobName(walletAddress), blobData }],
         expirationMicros: createExpirationMicros(SHELBY_BLOB_EXPIRATION_DAYS),
         networkKey,

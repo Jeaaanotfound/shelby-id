@@ -34,11 +34,11 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
   const [errorMsg, setErrorMsg] = useState('')
 
   const { notify } = useToast()
-  const { account, network, signTransaction } = useAptosWallet()
+  const { account, network, signAndSubmitTransaction } = useAptosWallet()
   const connectedAddress = getWalletAddress(account)
 
   const handleMint = async () => {
-    if (!walletAddress || !connectedAddress || !signTransaction) return
+    if (!walletAddress || !connectedAddress || !signAndSubmitTransaction) return
     if (!sameAddress(connectedAddress, walletAddress)) {
       setStatus('error')
       setErrorMsg('Wallet mismatch. Connect the same wallet you want to mint for.')
@@ -73,7 +73,7 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
 
       const result = await uploadShelbyBlobsWithWallet({
         walletAddress,
-        signTransaction,
+        signAndSubmitTransaction,
         blobs: [
           {
             blobName: getIdentityBlobName(walletAddress),

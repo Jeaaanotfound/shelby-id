@@ -10,11 +10,11 @@ import {
 import { getAptosApiKey, getNetworkConfig, normalizeAddress, type AppNetworkKey } from './aptos'
 import { getShelbyApiKey, getShelbyRpcBase } from './shelby'
 
-type WalletSignTransactionFn = WalletContextState['signTransaction'] | null | undefined
+type WalletSignAndSubmitTransactionFn = WalletContextState['signAndSubmitTransaction'] | null | undefined
 
 interface UploadShelbyBlobsWithWalletParams {
   walletAddress: string
-  signTransaction: WalletSignTransactionFn
+  signAndSubmitTransaction: WalletSignAndSubmitTransactionFn
   blobs: {
     blobName: string
     blobData: Uint8Array
@@ -427,14 +427,14 @@ async function putBlobWithRetry(
 
 export async function uploadShelbyBlobsWithWallet({
   walletAddress,
-  signTransaction,
+  signAndSubmitTransaction,
   blobs,
   expirationMicros,
   networkKey,
   onProgress,
 }: UploadShelbyBlobsWithWalletParams): Promise<UploadShelbyBlobsWithWalletResult> {
-  if (!signTransaction) {
-    throw new Error('A connected wallet is required to sign this transaction.')
+  if (!signAndSubmitTransaction) {
+    throw new Error('A connected wallet is required to approve this transaction.')
   }
 
   const account = normalizeAddress(walletAddress)
@@ -454,36 +454,30 @@ export async function uploadShelbyBlobsWithWallet({
     const commitments = await Promise.all(missingBlobs.map(async ({ blobData }) => generateCommitments(provider, blobData)))
     const chunksetSizeBytes = provider.config.erasure_k * provider.config.chunkSizeBytes
 
-    const transaction = await aptos.transaction.build.simple({
-      sender: account,
-      data: ShelbyBlobClient.createBatchRegisterBlobsPayload({
-        account: AccountAddress.from(account),
-        expirationMicros,
-        blobs: missingBlobs.map(({ blobName, blobData }, index) => ({
-          blobName,
-          blobSize: blobData.length,
-          blobMerkleRoot: commitments[index].blob_merkle_root,
-          numChunksets: expectedTotalChunksets(blobData.length, chunksetSizeBytes),
-        })),
-        encoding: provider.config.enumIndex,
-      }),
+    const transactionPayload = ShelbyBlobClient.createBatchRegisterBlobsPayload({
+      account: AccountAddress.from(account),
+      expirationMicros,
+      blobs: missingBlobs.map(({ blobName, blobData }, index) => ({
+        blobName,
+        blobSize: blobData.length,
+        blobMerkleRoot: commitments[index].blob_merkle_root,
+        numChunksets: expectedTotalChunksets(blobData.length, chunksetSizeBytes),
+      })),
+      encoding: provider.config.enumIndex,
     })
 
     missingBlobs.forEach(({ blobName }) => {
       reportProgress(onProgress, blobName, 36, 'awaiting_wallet', 'Waiting for wallet approval')
     })
 
-    const { authenticator } = await signTransaction({
-      transactionOrPayload: transaction,
+    // Use the wallet adapter's native submit path. Local ABI conversion can
+    // reject a valid Shelby payload before the wallet has a chance to ask for approval.
+    const pending = await signAndSubmitTransaction({
+      data: transactionPayload,
     })
 
     missingBlobs.forEach(({ blobName }) => {
       reportProgress(onProgress, blobName, 48, 'registering', 'Submitting blob registration onchain')
-    })
-
-    const pending = await aptos.transaction.submit.simple({
-      transaction,
-      senderAuthenticator: authenticator,
     })
 
     transactionHash = pending.hash
