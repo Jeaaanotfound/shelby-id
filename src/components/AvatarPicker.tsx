@@ -29,7 +29,7 @@ const PRESET_GRADIENTS = [
 ]
 
 export default function AvatarPicker({ walletAddress, currentAvatarUrl, onClose, onSuccess }: AvatarPickerProps) {
-  const { networkConfig, networkKey, shelbyClient } = useAppSettings()
+  const { networkConfig, networkKey } = useAppSettings()
   const { notify } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -119,7 +119,6 @@ export default function AvatarPicker({ walletAddress, currentAvatarUrl, onClose,
       const blobData = new Uint8Array(await fileToUpload.arrayBuffer())
 
       const result = await uploadShelbyBlobsWithWallet({
-        client: shelbyClient,
         walletAddress,
         signTransaction,
         blobs: [{ blobName: getAvatarBlobName(walletAddress), blobData }],

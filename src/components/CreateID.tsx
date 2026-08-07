@@ -25,7 +25,7 @@ const CATEGORIES: { value: Category; label: string }[] = [
 ]
 
 export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProps) {
-  const { networkConfig, networkKey, shelbyClient } = useAppSettings()
+  const { networkConfig, networkKey } = useAppSettings()
   const [displayName, setDisplayName] = useState('')
   const [bio, setBio] = useState('')
   const [twitter, setTwitter] = useState('')
@@ -72,7 +72,6 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
       })
 
       const result = await uploadShelbyBlobsWithWallet({
-        client: shelbyClient,
         walletAddress,
         signTransaction,
         blobs: [

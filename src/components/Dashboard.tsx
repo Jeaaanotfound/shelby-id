@@ -164,7 +164,6 @@ export default function Dashboard({ walletAddress, setCurrentPage }: DashboardPr
       })
 
       const result = await uploadShelbyBlobsWithWallet({
-        client: shelbyClient,
         walletAddress,
         signTransaction,
         blobs: preparedBlobs.map(({ blobName, blobData }) => ({ blobName, blobData })),

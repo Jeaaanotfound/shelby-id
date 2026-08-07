@@ -233,7 +233,6 @@ export default function Gallery({ walletAddress }: GalleryProps) {
       })
 
       const result = await uploadShelbyBlobsWithWallet({
-        client: shelbyClient,
         walletAddress,
         signTransaction,
         blobs: preparedBlobs.map(({ blobName, blobData }) => ({ blobName, blobData })),

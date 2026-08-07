@@ -6,7 +6,6 @@ import {
   generateCommitments,
   ShelbyBlobClient,
   SHELBYUSD_FA_METADATA_ADDRESS,
-  type ShelbyClient,
 } from '@shelby-protocol/sdk/browser'
 import { getAptosApiKey, getNetworkConfig, normalizeAddress, type AppNetworkKey } from './aptos'
 import { getShelbyApiKey, getShelbyRpcBase } from './shelby'
@@ -14,7 +13,6 @@ import { getShelbyApiKey, getShelbyRpcBase } from './shelby'
 type WalletSignTransactionFn = WalletContextState['signTransaction'] | null | undefined
 
 interface UploadShelbyBlobsWithWalletParams {
-  client: ShelbyClient
   walletAddress: string
   signTransaction: WalletSignTransactionFn
   blobs: {
@@ -201,31 +199,97 @@ async function completeMultipartUpload(networkKey: AppNetworkKey, uploadId: stri
   }
 }
 
-async function getRegisteredBlobNames(client: ShelbyClient, account: string, blobNames: string[]) {
-  const results = await Promise.all(
-    blobNames.map(async (blobName) => {
-      const metadata = await client.coordination.getFullObjectMetadata({
-        account,
-        name: blobName,
-      })
-      return metadata ? blobName : null
-    })
-  )
-
-  return new Set(results.filter((blobName): blobName is string => !!blobName))
+interface ShelbyIndexerBlobRow {
+  object_name?: string | null
+  is_committed?: boolean | number | string | null
+  is_deleted?: boolean | number | string | null
+  is_persisted?: boolean | number | string | null
 }
 
-async function confirmBlobExists(client: ShelbyClient, networkKey: AppNetworkKey, account: string, blobName: string) {
+interface ShelbyIndexerResponse {
+  data?: {
+    blobs?: ShelbyIndexerBlobRow[]
+  }
+  errors?: { message?: string }[]
+}
+
+function isShelbyFlagEnabled(value: ShelbyIndexerBlobRow[keyof ShelbyIndexerBlobRow]) {
+  return value === true || value === 1 || value === '1' || value === 'true'
+}
+
+function getShelbyObjectName(account: string, blobName: string) {
+  const longAddress = normalizeAddress(account).replace(/^0x/i, '').padStart(64, '0')
+  return `@${longAddress}/${blobName}`
+}
+
+async function queryShelbyIndexerBlobs(networkKey: AppNetworkKey, objectNames: string[]) {
+  if (objectNames.length === 0) return []
+
+  const response = await fetch(getNetworkConfig(networkKey).shelbyIndexerBase, {
+    method: 'POST',
+    headers: {
+      ...getShelbyAuthHeaders(networkKey),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: `query ShelbyBlobMetadata($names: [String!]!) {
+        blobs(
+          where: { object_name: { _in: $names } }
+          limit: 1000
+        ) {
+          object_name
+          is_committed
+          is_deleted
+          is_persisted
+        }
+      }`,
+      variables: { names: objectNames },
+    }),
+  })
+
+  const body = (await response.json().catch(() => ({}))) as ShelbyIndexerResponse
+  if (!response.ok) {
+    throw new Error(`ShelbyNet indexer returned ${response.status}.`)
+  }
+
+  if (body.errors?.length) {
+    throw new Error(body.errors.map((error) => error.message).filter(Boolean).join('; ') || 'ShelbyNet indexer query failed.')
+  }
+
+  return body.data?.blobs ?? []
+}
+
+async function getRegisteredBlobNames(networkKey: AppNetworkKey, account: string, blobNames: string[]) {
+  const objectNames = blobNames.map((blobName) => getShelbyObjectName(account, blobName))
+  const indexedBlobs = await queryShelbyIndexerBlobs(networkKey, objectNames)
+  const registeredObjectNames = new Set(
+    indexedBlobs
+      .filter(
+        (blob) =>
+          !!blob.object_name &&
+          !isShelbyFlagEnabled(blob.is_deleted) &&
+          (isShelbyFlagEnabled(blob.is_committed) || isShelbyFlagEnabled(blob.is_persisted))
+      )
+      .map((blob) => blob.object_name as string)
+  )
+
+  return new Set(blobNames.filter((blobName) => registeredObjectNames.has(getShelbyObjectName(account, blobName))))
+}
+
+async function confirmBlobExists(networkKey: AppNetworkKey, account: string, blobName: string) {
   const retryCount = getBlobConfirmRetryCount()
 
   for (let attempt = 0; attempt < retryCount; attempt++) {
     try {
-      const coordinationMatch = await client.coordination.getFullObjectMetadata({
-        account,
-        name: blobName,
-      })
+      const indexedBlobs = await queryShelbyIndexerBlobs(networkKey, [getShelbyObjectName(account, blobName)])
+      const indexedMatch = indexedBlobs.find(
+        (blob) =>
+          blob.object_name === getShelbyObjectName(account, blobName) &&
+          !isShelbyFlagEnabled(blob.is_deleted) &&
+          (isShelbyFlagEnabled(blob.is_committed) || isShelbyFlagEnabled(blob.is_persisted))
+      )
 
-      if (coordinationMatch?.isWritten) {
+      if (indexedMatch) {
         return true
       }
 
@@ -272,7 +336,6 @@ function getMultipartPartSize(blobData: Uint8Array) {
 }
 
 async function runMultipartUploadOnce(
-  client: ShelbyClient,
   networkKey: AppNetworkKey,
   account: string,
   blobName: string,
@@ -302,7 +365,7 @@ async function runMultipartUploadOnce(
 
     reportProgress(onProgress, blobName, 92, 'verifying', 'Checking whether the blob was still written')
 
-    if ((uploadSessionGone || serverFinalizeError) && (await confirmBlobExists(client, networkKey, account, blobName))) {
+    if ((uploadSessionGone || serverFinalizeError) && (await confirmBlobExists(networkKey, account, blobName))) {
       return
     }
 
@@ -311,7 +374,6 @@ async function runMultipartUploadOnce(
 }
 
 async function putBlobWithRetry(
-  client: ShelbyClient,
   networkKey: AppNetworkKey,
   account: string,
   blobName: string,
@@ -323,7 +385,7 @@ async function putBlobWithRetry(
       reportProgress(onProgress, blobName, 64, 'uploading', 'Uploading directly to Shelby')
       await putBlobDirect(networkKey, account, blobName, blobData)
       reportProgress(onProgress, blobName, 92, 'verifying', 'Confirming the blob is readable')
-      if (await confirmBlobExists(client, networkKey, account, blobName)) {
+      if (await confirmBlobExists(networkKey, account, blobName)) {
         return
       }
     } catch {
@@ -336,7 +398,7 @@ async function putBlobWithRetry(
 
   for (let attempt = 0; attempt < maxSessionAttempts; attempt++) {
     try {
-      await runMultipartUploadOnce(client, networkKey, account, blobName, blobData, onProgress)
+      await runMultipartUploadOnce(networkKey, account, blobName, blobData, onProgress)
       return
     } catch (error) {
       lastError = error
@@ -354,7 +416,7 @@ async function putBlobWithRetry(
 
       await sleep(1_200 * (attempt + 1))
       reportProgress(onProgress, blobName, 92, 'verifying', 'Checking whether the previous attempt actually landed')
-      if (await confirmBlobExists(client, networkKey, account, blobName)) {
+      if (await confirmBlobExists(networkKey, account, blobName)) {
         return
       }
     }
@@ -364,7 +426,6 @@ async function putBlobWithRetry(
 }
 
 export async function uploadShelbyBlobsWithWallet({
-  client,
   walletAddress,
   signTransaction,
   blobs,
@@ -378,7 +439,7 @@ export async function uploadShelbyBlobsWithWallet({
 
   const account = normalizeAddress(walletAddress)
   const existingBlobNames = await getRegisteredBlobNames(
-    client,
+    networkKey,
     account,
     blobs.map(({ blobName }) => blobName)
   )
@@ -439,7 +500,7 @@ export async function uploadShelbyBlobsWithWallet({
   await Promise.all(
     blobs.map(async ({ blobName, blobData }) => {
       reportProgress(onProgress, blobName, 58, 'uploading', 'Starting Shelby upload')
-      await putBlobWithRetry(client, networkKey, account, blobName, blobData, onProgress)
+      await putBlobWithRetry(networkKey, account, blobName, blobData, onProgress)
       reportProgress(onProgress, blobName, 100, 'done', 'Stored successfully')
     })
   )
