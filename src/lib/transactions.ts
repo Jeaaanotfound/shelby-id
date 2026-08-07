@@ -3,11 +3,10 @@ import type { WalletContextState } from '@aptos-labs/wallet-adapter-react'
 import { getNetworkConfig, type AppNetworkKey } from './aptos'
 
 type WalletNetworkLike = WalletContextState['network']
-type WalletChangeNetworkFn = WalletContextState['changeNetwork'] | null | undefined
+type DetectedNetworkKey = AppNetworkKey | 'testnet'
 
 interface EnsureWalletNetworkParams {
   walletNetwork: WalletNetworkLike
-  changeNetwork: WalletChangeNetworkFn
   networkKey: AppNetworkKey
   notify: (input: { title: string; description?: string; tone?: 'success' | 'error' | 'warning' | 'info' }) => void
 }
@@ -20,7 +19,7 @@ function normalizeUrl(url: string | undefined): string {
   return (url ?? '').trim().toLowerCase()
 }
 
-function resolveWalletNetworkKey(walletNetwork: WalletNetworkLike): AppNetworkKey | null {
+function resolveWalletNetworkKey(walletNetwork: WalletNetworkLike): DetectedNetworkKey | null {
   const networkName = walletNetwork?.name
   const networkUrl = normalizeUrl(walletNetwork?.url)
 
@@ -36,9 +35,11 @@ function resolveWalletNetworkKey(walletNetwork: WalletNetworkLike): AppNetworkKe
 function getWalletNetworkLabel(walletNetwork: WalletNetworkLike): string {
   const resolved = resolveWalletNetworkKey(walletNetwork)
 
-  if (resolved) {
+  if (resolved === 'shelbynet') {
     return getNetworkConfig(resolved).label
   }
+
+  if (resolved === 'testnet') return 'Testnet'
 
   const networkName = getWalletNetworkName(walletNetwork)
   if (networkName) {
@@ -75,10 +76,6 @@ export async function ensureWalletMatchesAppNetwork({
   }
 
   if (resolvedWalletNetworkKey === networkKey) {
-    return
-  }
-
-  if (!resolvedWalletNetworkKey) {
     return
   }
 

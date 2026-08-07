@@ -1,12 +1,12 @@
-import { Grid, List, Share2, Upload, Image, Music, FileText, Video, Eye, EyeOff, X, ChevronLeft, ChevronRight, Loader, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Grid, List, Share2, Upload, Image, Music, FileText, Video, X, ChevronLeft, ChevronRight, Loader, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useAccountBlobs } from '@shelby-protocol/react'
-import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
+import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { useWallet as useAptosWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAppSettings } from '../context/AppSettings'
 import { useToast } from '../context/ToastContext'
 import { getWalletAddress, isValidAptosAddress, sameAddress } from '../lib/aptos'
-import { buildBlobName, createExpirationMicros, formatShelbyErrorMessage, getBlobReadUrl, isReservedBlobPath } from '../lib/shelby'
+import { buildBlobName, createExpirationMicros, formatShelbyErrorMessage, getBlobReadUrl, isReservedBlobPath, SHELBY_BLOB_EXPIRATION_DAYS } from '../lib/shelby'
 import { uploadShelbyBlobsWithWallet, type UploadProgressUpdate } from '../lib/shelbyWrite'
 import { ensureWalletMatchesAppNetwork, getTransactionErrorMessage, isWalletRejectedError } from '../lib/transactions'
 import { useIdentity } from '../hooks/useIdentity'
@@ -16,7 +16,7 @@ interface GalleryProps {
   walletAddress: string | null
 }
 
-type ShelbyBlob = BlobMetadata
+type ShelbyBlob = FullObjectMetadata
 type Filter = 'all' | 'image' | 'music' | 'video' | 'doc'
 type ViewMode = 'grid' | 'list'
 type UploadCardTone = 'active' | 'success' | 'error'
@@ -96,7 +96,6 @@ export default function Gallery({ walletAddress }: GalleryProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [lightbox, setLightbox] = useState<number | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
-  const [visibility, setVisibility] = useState<Record<string, boolean>>({})
   const [uploadProgress, setUploadProgress] = useState<Record<string, UploadCardState>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -120,10 +119,6 @@ export default function Gallery({ walletAddress }: GalleryProps) {
     music: allBlobs.filter((blob) => getFileType(getBlobName(blob)) === 'music').length,
     video: allBlobs.filter((blob) => getFileType(getBlobName(blob)) === 'video').length,
     doc: allBlobs.filter((blob) => getFileType(getBlobName(blob)) === 'doc').length,
-  }
-
-  const toggleVisibility = (name: string) => {
-    setVisibility((current) => ({ ...current, [name]: !current[name] }))
   }
 
   const updateUploadCard = (fileName: string, next: Partial<UploadCardState>) => {
@@ -171,7 +166,6 @@ export default function Gallery({ walletAddress }: GalleryProps) {
   const shareGallery = () => {
     const url = new URL(window.location.href)
     url.searchParams.set('gallery', walletAddress ?? '')
-    url.searchParams.set('network', networkKey)
     navigator.clipboard.writeText(url.toString())
     setLinkCopied(true)
     notify({
@@ -196,7 +190,6 @@ export default function Gallery({ walletAddress }: GalleryProps) {
     try {
       await ensureWalletMatchesAppNetwork({
         walletNetwork: network,
-        changeNetwork: null,
         networkKey,
         notify,
       })
@@ -209,7 +202,7 @@ export default function Gallery({ walletAddress }: GalleryProps) {
       return
     }
 
-    const expiry = createExpirationMicros(7)
+    const expiry = createExpirationMicros(SHELBY_BLOB_EXPIRATION_DAYS)
     const fileList = Array.from(files)
 
     fileList.forEach((file) => {
@@ -310,8 +303,6 @@ export default function Gallery({ walletAddress }: GalleryProps) {
 
   const isOwner = !!walletAddress && sameAddress(connectedAddress, walletAddress)
   const initials = identity?.displayName?.[0]?.toUpperCase() ?? walletAddress?.[2]?.toUpperCase() ?? '?'
-  const publicCount = allBlobs.filter((blob) => visibility[getBlobName(blob)] !== false).length
-  const privateCount = allBlobs.length - publicCount
 
   const filters: { key: Filter; label: string }[] = [
     { key: 'all', label: 'All' },
@@ -330,12 +321,12 @@ export default function Gallery({ walletAddress }: GalleryProps) {
               <span className="premium-kicker">Gallery Floor</span>
               <h1 className="premium-title premium-title--wide">Present files like a curated archive, not a random bucket of blobs.</h1>
               <p className="premium-copy">
-                Shelby storage may be technical under the hood, but the surface should feel considered. This gallery shows what is public, what is private, and what is worth sharing.
+                Shelby storage may be technical under the hood, but the surface should feel considered. This gallery presents the readable ShelbyNet files associated with this wallet.
               </p>
               <div className="premium-meta-row">
                 <span className="premium-chip premium-chip--accent">{networkConfig.label}</span>
                 <span className="premium-chip">{counts.all} works</span>
-                <span className="premium-chip">{publicCount} public / {privateCount} private</span>
+                <span className="premium-chip">{counts.image} images</span>
               </div>
             </div>
             <div className="curation-panel">
@@ -373,8 +364,8 @@ export default function Gallery({ walletAddress }: GalleryProps) {
         <section className="premium-metrics animate-fade-up delay-1">
           {[
             { label: 'all works', value: counts.all.toString(), meta: 'files visible in archive' },
-            { label: 'public', value: publicCount.toString(), meta: 'share-ready surfaces' },
-            { label: 'private', value: privateCount.toString(), meta: 'hidden from view' },
+            { label: 'images', value: counts.image.toString(), meta: 'image files in archive' },
+            { label: 'media', value: (counts.music + counts.video).toString(), meta: 'audio and video files' },
             { label: 'focus', value: filter.toUpperCase(), meta: 'current curation mode' },
           ].map((item) => (
             <article key={item.label} className="premium-metric">
@@ -453,7 +444,6 @@ export default function Gallery({ walletAddress }: GalleryProps) {
             <div className="gallery-grid-premium">
               {filtered.map((blob, index) => {
                 const name = getBlobName(blob)
-                const isPublic = visibility[name] !== false
                 return (
                   <article key={name} className={`gallery-card-premium ${index === 0 ? 'gallery-card-premium--featured' : ''}`}>
                     <div className="gallery-card-premium__media" onClick={() => setLightbox(index)}>
@@ -466,12 +456,9 @@ export default function Gallery({ walletAddress }: GalleryProps) {
                           <p className="gallery-card-premium__meta">
                             {formatBytes(blob.size ?? 0)}
                             {blob.creationMicros ? ` / ${formatDate(blob.creationMicros)}` : ''}
+                            {blob.expirationMicros ? ` / expires ${formatDate(blob.expirationMicros)}` : ''}
                           </p>
                         </div>
-                        <button onClick={() => toggleVisibility(name)} className="btn-ghost px-3 py-2 rounded-full text-xs inline-flex items-center gap-1.5">
-                          {isPublic ? <Eye size={12} /> : <EyeOff size={12} />}
-                          {isPublic ? 'Public' : 'Private'}
-                        </button>
                       </div>
                       <div className="muted-dot-list">
                         <span>{getFileType(name)}</span>
@@ -486,7 +473,6 @@ export default function Gallery({ walletAddress }: GalleryProps) {
             <div className="editorial-stack">
               {filtered.map((blob, index) => {
                 const name = getBlobName(blob)
-                const isPublic = visibility[name] !== false
                 return (
                   <div key={`${name}-${index}`} className="editorial-row cursor-pointer" onClick={() => setLightbox(index)}>
                     <div className="editorial-row__icon" style={{ background: `var(--cat-${getFileType(name)}-bg, var(--cat-image-bg))` }}>
@@ -497,18 +483,9 @@ export default function Gallery({ walletAddress }: GalleryProps) {
                       <p className="editorial-row__sub">
                         {formatBytes(blob.size ?? 0)}
                         {blob.creationMicros ? ` / ${formatDate(blob.creationMicros)}` : ''}
+                        {blob.expirationMicros ? ` / expires ${formatDate(blob.expirationMicros)}` : ''}
                       </p>
                     </div>
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        toggleVisibility(name)
-                      }}
-                      className="btn-ghost px-3 py-2 rounded-full text-xs inline-flex items-center gap-1.5"
-                    >
-                      {isPublic ? <Eye size={12} /> : <EyeOff size={12} />}
-                      {isPublic ? 'Public' : 'Private'}
-                    </button>
                   </div>
                 )
               })}
@@ -540,10 +517,11 @@ export default function Gallery({ walletAddress }: GalleryProps) {
                 <p className="text-xs font-mono" style={{ color: 'var(--muted)' }}>
                   {formatBytes(filtered[lightbox].size ?? 0)}
                   {filtered[lightbox].creationMicros ? ` / ${formatDate(filtered[lightbox].creationMicros)}` : ''}
+                  {filtered[lightbox].expirationMicros ? ` / expires ${formatDate(filtered[lightbox].expirationMicros)}` : ''}
                 </p>
               </div>
-              <span className="text-xs px-2 py-1 rounded-full pill-soft" style={{ color: visibility[getBlobName(filtered[lightbox])] !== false ? 'var(--success)' : 'var(--text-muted)' }}>
-                {visibility[getBlobName(filtered[lightbox])] !== false ? 'public' : 'private'}
+              <span className="text-xs px-2 py-1 rounded-full pill-soft" style={{ color: 'var(--success)' }}>
+                ShelbyNet blob
               </span>
             </div>
           </div>

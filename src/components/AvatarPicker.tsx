@@ -4,7 +4,7 @@ import { useWallet as useAptosWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAppSettings } from '../context/AppSettings'
 import { useToast } from '../context/ToastContext'
 import { sameAddress } from '../lib/aptos'
-import { createExpirationMicros, formatShelbyErrorMessage, getAvatarBlobName } from '../lib/shelby'
+import { createExpirationMicros, formatShelbyErrorMessage, getAvatarBlobName, SHELBY_BLOB_EXPIRATION_DAYS } from '../lib/shelby'
 import { uploadShelbyBlobsWithWallet } from '../lib/shelbyWrite'
 import { ensureWalletMatchesAppNetwork, getTransactionErrorMessage, isWalletRejectedError } from '../lib/transactions'
 
@@ -111,7 +111,6 @@ export default function AvatarPicker({ walletAddress, currentAvatarUrl, onClose,
 
       await ensureWalletMatchesAppNetwork({
         walletNetwork: network,
-        changeNetwork: null,
         networkKey,
         notify,
       })
@@ -124,7 +123,7 @@ export default function AvatarPicker({ walletAddress, currentAvatarUrl, onClose,
         walletAddress,
         signTransaction,
         blobs: [{ blobName: getAvatarBlobName(walletAddress), blobData }],
-        expirationMicros: createExpirationMicros(365),
+        expirationMicros: createExpirationMicros(SHELBY_BLOB_EXPIRATION_DAYS),
         networkKey,
       })
 

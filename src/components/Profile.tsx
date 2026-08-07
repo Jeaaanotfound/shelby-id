@@ -1,18 +1,20 @@
 import { ExternalLink, Copy, Share2, Twitter, Music, Image, FileText, Video, CheckCircle, AlertCircle, Camera, ArrowRight } from 'lucide-react'
 import { useState } from 'react'
 import { useAccountBlobs } from '@shelby-protocol/react'
-import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
+import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { useAppSettings } from '../context/AppSettings'
 import {
   getAptosAccountExplorerUrl,
+  getAptosTransactionExplorerUrl,
   getShelbyBlobExplorerUrl,
   getShelbyExplorerUrl,
   getWalletAddress,
   isValidAptosAddress,
   sameAddress,
 } from '../lib/aptos'
-import { isReservedBlobPath } from '../lib/shelby'
+import { getAvatarBlobName, getIdentityBlobName, isReservedBlobPath } from '../lib/shelby'
 import { useIdentity } from '../hooks/useIdentity'
+import { useBlobActivities } from '../hooks/useBlobActivities'
 import { ProfileSkeleton } from './Skeleton'
 import { useAvatar } from '../hooks/useAvatar'
 import AvatarPicker from './AvatarPicker'
@@ -23,7 +25,7 @@ interface ProfileProps {
   setCurrentPage: (page: 'home' | 'profile' | 'create' | 'dashboard' | 'gallery') => void
 }
 
-type ShelbyBlob = BlobMetadata
+type ShelbyBlob = FullObjectMetadata
 
 function getBlobName(blob: ShelbyBlob): string {
   return blob.blobNameSuffix ?? String(blob.name) ?? ''
@@ -38,6 +40,45 @@ function formatBytes(bytes: number): string {
 
 function formatDate(micros: number): string {
   return new Date(micros / 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function formatDateTime(micros: number): string {
+  return new Date(micros / 1000).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function formatCommitment(root: Uint8Array): string {
+  const hex = Array.from(root, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  if (!hex) return 'Unavailable'
+  return `0x${hex.slice(0, 18)}...${hex.slice(-10)}`
+}
+
+function getBlobStatus(blob: ShelbyBlob | undefined): string {
+  if (!blob) return 'Not indexed'
+  if (blob.isDeleted) return 'Deleted'
+  return blob.isWritten ? 'Written' : 'Registered'
+}
+
+function VerificationRow({ label, value, href }: { label: string; value: string; href?: string }) {
+  return (
+    <div className="editorial-row">
+      <div className="editorial-row__meta min-w-0">
+        <p className="editorial-row__sub">{label}</p>
+        {href ? (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="editorial-row__title truncate inline-flex items-center gap-1.5">
+            {value} <ExternalLink size={12} />
+          </a>
+        ) : (
+          <p className="editorial-row__title break-all">{value}</p>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function getFileType(name: string) {
@@ -89,6 +130,18 @@ export default function Profile({ walletAddress, setCurrentPage }: ProfileProps)
   const isLoading = identityLoading || blobsLoading
   const works = blobs.filter((blob) => !isReservedBlobPath(getBlobName(blob)))
   const totalStorage = works.reduce((acc, b) => acc + b.size, 0)
+  const identityBlob = walletAddress
+    ? blobs.find((blob) => getBlobName(blob) === getIdentityBlobName(walletAddress))
+    : undefined
+  const avatarBlob = walletAddress
+    ? blobs.find((blob) => getBlobName(blob) === getAvatarBlobName(walletAddress))
+    : undefined
+  const { activities, isLoading: activitiesLoading } = useBlobActivities({
+    client: shelbyClient,
+    blobNames: blobs.map((blob) => String(blob.name)),
+    enabled: !!walletAddress && isValidAptosAddress(walletAddress),
+  })
+  const identityActivity = identityBlob ? activities[String(identityBlob.name)] : null
 
   const copyAddress = () => {
     if (!walletAddress) return
@@ -100,7 +153,6 @@ export default function Profile({ walletAddress, setCurrentPage }: ProfileProps)
   const shareProfile = () => {
     const url = new URL(window.location.href)
     url.searchParams.set('profile', walletAddress ?? '')
-    url.searchParams.set('network', networkKey)
     navigator.clipboard.writeText(url.toString())
     setLinkCopied(true)
     setTimeout(() => setLinkCopied(false), 2000)
@@ -168,10 +220,10 @@ export default function Profile({ walletAddress, setCurrentPage }: ProfileProps)
               <div>
               <span className="premium-kicker">Identity Dossier</span>
               <h1 className="premium-title premium-title--wide">{identity.displayName}</h1>
-                <p className="premium-copy">{identity.bio || 'A verified Shelby identity with a portable archive of published work.'}</p>
+                <p className="premium-copy">{identity.bio || 'A Shelby-backed identity with a portable archive of published work.'}</p>
                 <div className="premium-meta-row">
                   <span className="premium-chip premium-chip--accent">
-                    <CheckCircle size={12} /> verified
+                    <CheckCircle size={12} /> wallet-linked
                   </span>
                   <span className="premium-chip">{identity.category}</span>
                   <span className="premium-chip">{networkConfig.label}</span>
@@ -219,6 +271,30 @@ export default function Profile({ walletAddress, setCurrentPage }: ProfileProps)
             ))}
           </section>
 
+          <section className="premium-surface premium-surface--padded animate-fade-up delay-2">
+            <div className="premium-section-head">
+              <div>
+                <p className="section-kicker">Verification record</p>
+                <h2>What this profile is backed by</h2>
+              </div>
+              <p>Read-only metadata from Aptos and ShelbyNet.</p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <VerificationRow label="Account" value={walletAddress} href={getAptosAccountExplorerUrl(walletAddress, networkKey)} />
+              <VerificationRow label="Network" value={networkConfig.label} />
+              <VerificationRow label="Identity blob" value={identityBlob ? getBlobName(identityBlob) : 'Not indexed'} href={identityBlob ? getShelbyBlobExplorerUrl(walletAddress, getBlobName(identityBlob), networkKey) : undefined} />
+              <VerificationRow label="Blob status" value={getBlobStatus(identityBlob)} />
+              <VerificationRow label="Expires" value={identityBlob ? formatDateTime(identityBlob.expirationMicros) : 'Not indexed'} />
+              <VerificationRow label="Blob commitment" value={identityBlob ? formatCommitment(identityBlob.blobMerkleRoot) : 'Unavailable'} />
+              <VerificationRow
+                label="Registration transaction"
+                value={identityActivity?.transactionHash ?? (activitiesLoading ? 'Indexing activity...' : 'Not indexed')}
+                href={identityActivity?.transactionHash ? getAptosTransactionExplorerUrl(identityActivity.transactionHash, networkKey) : undefined}
+              />
+              <VerificationRow label="Avatar blob" value={avatarBlob ? getBlobStatus(avatarBlob) : 'Not uploaded'} />
+            </div>
+          </section>
+
           <section className="premium-grid animate-fade-up delay-2">
             <div className="premium-surface premium-surface--padded">
                 <div className="premium-section-head">
@@ -239,7 +315,7 @@ export default function Profile({ walletAddress, setCurrentPage }: ProfileProps)
                   <div className="premium-surface premium-surface--padded" style={{ background: 'color-mix(in oklch, var(--bg-elevated) 94%, transparent)' }}>
                     <p className="section-kicker">Profile note</p>
                     <p className="premium-copy" style={{ marginTop: '10px', fontSize: '14px' }}>
-                      {identity.bio || `${identity.displayName} is using ShelbyID as a clear, verifiable identity layer for publishing work.`}
+                      {identity.bio || `${identity.displayName} is using ShelbyID as a clear, wallet-linked identity layer for publishing work.`}
                     </p>
                   </div>
                   {works.map((blob) => {
@@ -255,6 +331,7 @@ export default function Profile({ walletAddress, setCurrentPage }: ProfileProps)
                           <p className="editorial-row__sub">
                             {blob.size ? formatBytes(blob.size) : ''}
                             {blob.creationMicros ? ` / ${formatDate(blob.creationMicros)}` : ''}
+                            {blob.expirationMicros ? ` / expires ${formatDate(blob.expirationMicros)}` : ''}
                             {blob.isWritten ? ' / stored' : ''}
                           </p>
                         </div>

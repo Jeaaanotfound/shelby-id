@@ -1,7 +1,7 @@
 import { AccountAddress, Network } from '@aptos-labs/ts-sdk'
 import type { WalletContextState } from '@aptos-labs/wallet-adapter-react'
 
-export type AppNetworkKey = 'shelbynet' | 'testnet'
+export type AppNetworkKey = 'shelbynet'
 
 export interface AppNetworkConfig {
   key: AppNetworkKey
@@ -9,10 +9,11 @@ export interface AppNetworkConfig {
   badge: string
   tagline: string
   note: string
-  aptosNetwork: Network.TESTNET | Network.SHELBYNET | Network.LOCAL
+  aptosNetwork: Network.SHELBYNET
   aptosApiBase: string
   shelbyApiBase: string
   shelbyRpcBase: string
+  shelbyIndexerBase: string
   shelbyExplorerBase: string
 }
 
@@ -32,43 +33,19 @@ export const APP_NETWORKS: Record<AppNetworkKey, AppNetworkConfig> = {
     aptosApiBase: 'https://api.shelbynet.shelby.xyz/v1',
     shelbyApiBase: 'https://api.shelbynet.shelby.xyz',
     shelbyRpcBase: 'https://api.shelbynet.shelby.xyz/shelby',
+    shelbyIndexerBase: 'https://api.shelbynet.shelby.xyz/v1/graphql',
     shelbyExplorerBase: 'https://explorer.shelby.xyz/shelbynet',
   },
-  testnet: {
-    key: 'testnet',
-    label: 'Testnet',
-    badge: 'stable sandbox',
-    tagline: 'Safer testing with the public Aptos testnet surface.',
-    note: 'Best for broader compatibility checks before mainnet work.',
-    aptosNetwork: Network.TESTNET,
-    aptosApiBase: 'https://api.testnet.aptoslabs.com/v1',
-    shelbyApiBase: 'https://api.testnet.shelby.xyz',
-    shelbyRpcBase: 'https://api.testnet.shelby.xyz/shelby',
-    shelbyExplorerBase: 'https://explorer.shelby.xyz/testnet',
-  },
-}
-
-export function isAppNetworkKey(value: string | null | undefined): value is AppNetworkKey {
-  return value === 'shelbynet' || value === 'testnet'
 }
 
 export function getNetworkConfig(networkKey: AppNetworkKey): AppNetworkConfig {
   return APP_NETWORKS[networkKey]
 }
 
-export function getAptosApiKey(networkKey: AppNetworkKey): string | undefined {
-  if (networkKey === 'shelbynet') {
-    return (
-      (import.meta.env.VITE_APTOS_SHELBYNET_API_KEY as string | undefined) ??
-      (import.meta.env.VITE_SHELBY_SHELBYNET_API_KEY as string | undefined) ??
-      LEGACY_APTOS_API_KEY ??
-      LEGACY_SHELBY_API_KEY
-    )
-  }
-
+export function getAptosApiKey(): string | undefined {
   return (
-    (import.meta.env.VITE_APTOS_TESTNET_API_KEY as string | undefined) ??
-    (import.meta.env.VITE_SHELBY_TESTNET_API_KEY as string | undefined) ??
+    (import.meta.env.VITE_APTOS_SHELBYNET_API_KEY as string | undefined) ??
+    (import.meta.env.VITE_SHELBY_SHELBYNET_API_KEY as string | undefined) ??
     LEGACY_APTOS_API_KEY ??
     LEGACY_SHELBY_API_KEY
   )
@@ -76,6 +53,10 @@ export function getAptosApiKey(networkKey: AppNetworkKey): string | undefined {
 
 export function getAptosAccountExplorerUrl(address: string, networkKey: AppNetworkKey): string {
   return `https://explorer.aptoslabs.com/account/${normalizeAddress(address)}?network=${networkKey}`
+}
+
+export function getAptosTransactionExplorerUrl(transactionHash: string, networkKey: AppNetworkKey): string {
+  return `https://explorer.aptoslabs.com/txn/${encodeURIComponent(transactionHash)}?network=${networkKey}`
 }
 
 export function getShelbyExplorerUrl(networkKey: AppNetworkKey): string {

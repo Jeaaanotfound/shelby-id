@@ -25,8 +25,7 @@ function RuntimeProviders() {
 
   const aptosApiKeys = useMemo(
     () => ({
-      testnet: getAptosApiKey('testnet'),
-      shelbynet: getAptosApiKey('shelbynet'),
+      shelbynet: getAptosApiKey(),
     }),
     []
   )

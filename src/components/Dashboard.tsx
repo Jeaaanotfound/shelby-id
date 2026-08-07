@@ -1,7 +1,7 @@
 import { Upload, Image, Music, FileText, Video, ExternalLink, Loader, AlertCircle, Camera, ArrowRight } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useAccountBlobs } from '@shelby-protocol/react'
-import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
+import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { useWallet as useAptosWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAppSettings } from '../context/AppSettings'
 import { useToast } from '../context/ToastContext'
@@ -13,7 +13,7 @@ import {
   isValidAptosAddress,
   sameAddress,
 } from '../lib/aptos'
-import { buildBlobName, createExpirationMicros, formatShelbyErrorMessage, isReservedBlobPath } from '../lib/shelby'
+import { buildBlobName, createExpirationMicros, formatShelbyErrorMessage, isReservedBlobPath, SHELBY_BLOB_EXPIRATION_DAYS } from '../lib/shelby'
 import { uploadShelbyBlobsWithWallet } from '../lib/shelbyWrite'
 import { ensureWalletMatchesAppNetwork, getTransactionErrorMessage, isWalletRejectedError } from '../lib/transactions'
 import { useIdentity } from '../hooks/useIdentity'
@@ -24,7 +24,7 @@ interface DashboardProps {
   setCurrentPage: (page: 'home' | 'profile' | 'create' | 'dashboard' | 'gallery') => void
 }
 
-type ShelbyBlob = BlobMetadata
+type ShelbyBlob = FullObjectMetadata
 
 function getBlobName(blob: ShelbyBlob): string {
   return blob.blobNameSuffix ?? String(blob.name) ?? ''
@@ -132,7 +132,6 @@ export default function Dashboard({ walletAddress, setCurrentPage }: DashboardPr
     try {
       await ensureWalletMatchesAppNetwork({
         walletNetwork: network,
-        changeNetwork: null,
         networkKey,
         notify,
       })
@@ -145,7 +144,7 @@ export default function Dashboard({ walletAddress, setCurrentPage }: DashboardPr
       return
     }
 
-    const expiry = createExpirationMicros(7)
+    const expiry = createExpirationMicros(SHELBY_BLOB_EXPIRATION_DAYS)
     const fileList = Array.from(files)
     fileList.forEach((file) => {
       setUploadProgress((progress) => ({ ...progress, [file.name]: 15 }))
@@ -352,6 +351,7 @@ export default function Dashboard({ walletAddress, setCurrentPage }: DashboardPr
                             <p className="editorial-row__sub">
                               {formatBytes(blob.size ?? 0)}
                               {blob.creationMicros ? ` / ${formatDate(blob.creationMicros)}` : ''}
+                              {blob.expirationMicros ? ` / expires ${formatDate(blob.expirationMicros)}` : ''}
                               {blob.isWritten ? ' / stored' : ''}
                             </p>
                           </div>

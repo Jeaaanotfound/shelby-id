@@ -6,14 +6,12 @@ const NETWORK_API_KEYS: Partial<Record<AppNetworkKey, string | undefined>> = {
   shelbynet:
     (import.meta.env.VITE_SHELBY_SHELBYNET_API_KEY as string | undefined) ??
     LEGACY_API_KEY,
-  testnet:
-    (import.meta.env.VITE_SHELBY_TESTNET_API_KEY as string | undefined) ??
-    LEGACY_API_KEY,
 }
 
 export const SHELBY_NAMESPACE = 'shelbyid'
 export const IDENTITY_BLOB_FILE = 'identity.json'
 export const AVATAR_BLOB_FILE = 'avatar'
+export const SHELBY_BLOB_EXPIRATION_DAYS = 365
 
 const RESERVED_BLOB_FILES = new Set([IDENTITY_BLOB_FILE, AVATAR_BLOB_FILE])
 
@@ -36,6 +34,7 @@ export function createShelbyClient(networkKey: AppNetworkKey): ShelbyClient {
 
   return new ShelbyClient({
     network: networkConfig.aptosNetwork,
+    indexer: { baseUrl: networkConfig.shelbyIndexerBase },
     ...(apiKey ? { apiKey } : {}),
   })
 }
@@ -96,9 +95,7 @@ export function formatShelbyErrorMessage(error: unknown, networkKey: AppNetworkK
   const networkLabel = getNetworkConfig(networkKey).label
 
   if (normalized.includes('api key not found') || normalized.includes('unauthorized') || normalized.includes('"code":"401"')) {
-    return `Shelby ${networkLabel} API key is missing or invalid. Set a valid ${
-      networkKey === 'shelbynet' ? 'VITE_SHELBY_SHELBYNET_API_KEY' : 'VITE_SHELBY_TESTNET_API_KEY'
-    } in your .env and restart the app.`
+    return `Shelby ${networkLabel} API key is missing or invalid. Set a valid VITE_SHELBY_SHELBYNET_API_KEY in your .env and restart the app.`
   }
 
   if (
@@ -108,7 +105,7 @@ export function formatShelbyErrorMessage(error: unknown, networkKey: AppNetworkK
     normalized.includes('service unavailable')
   ) {
     if (networkKey === 'shelbynet') {
-      return 'ShelbyNet write service returned 500. The blob may not have been persisted. Try again later or switch to Testnet.'
+      return 'ShelbyNet write service returned 500. The blob may not have been persisted. Try again later.'
     }
 
     return `${networkLabel} write service returned 500. The blob may not have been persisted. Try again later.`

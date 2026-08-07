@@ -1,11 +1,11 @@
 import { Aptos, AptosConfig, AccountAddress } from '@aptos-labs/ts-sdk'
 import type { WalletContextState } from '@aptos-labs/wallet-adapter-react'
 import {
-  createBlobKey,
   createDefaultErasureCodingProvider,
   expectedTotalChunksets,
   generateCommitments,
   ShelbyBlobClient,
+  SHELBYUSD_FA_METADATA_ADDRESS,
   type ShelbyClient,
 } from '@shelby-protocol/sdk/browser'
 import { getAptosApiKey, getNetworkConfig, normalizeAddress, type AppNetworkKey } from './aptos'
@@ -40,7 +40,7 @@ export interface UploadProgressUpdate {
 
 const RPC_UPLOAD_RETRY_COUNT = 5
 const INDEXER_SETTLE_DELAY_MS = 1_500
-const TESTNET_MULTIPART_PART_SIZE_BYTES = 1_048_576
+const MULTIPART_PART_SIZE_BYTES = 1_048_576
 const DIRECT_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
 const MULTIPART_SESSION_RETRY_COUNT = 2
 
@@ -48,13 +48,13 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
-function getBlobConfirmRetryCount(networkKey: AppNetworkKey) {
-  return networkKey === 'shelbynet' ? 4 : 10
+function getBlobConfirmRetryCount() {
+  return 4
 }
 
 function createAptosClient(networkKey: AppNetworkKey) {
   const networkConfig = getNetworkConfig(networkKey)
-  const apiKey = getAptosApiKey(networkKey)
+  const apiKey = getAptosApiKey()
 
   return new Aptos(
     new AptosConfig({
@@ -63,6 +63,31 @@ function createAptosClient(networkKey: AppNetworkKey) {
       ...(apiKey ? { clientConfig: { API_KEY: apiKey } } : {}),
     })
   )
+}
+
+async function assertShelbyNetFunding(aptos: Aptos, account: string, needsGas: boolean) {
+  let aptBalance: number
+  let shelbyUsdBalance: number
+
+  try {
+    ;[aptBalance, shelbyUsdBalance] = await Promise.all([
+      aptos.getAccountAPTAmount({ accountAddress: account }),
+      aptos.getAccountCoinAmount({
+        accountAddress: account,
+        faMetadataAddress: SHELBYUSD_FA_METADATA_ADDRESS,
+      }),
+    ])
+  } catch {
+    throw new Error('Unable to check ShelbyNet funding. Try again, then confirm the wallet has APT and ShelbyUSD.')
+  }
+
+  if (needsGas && aptBalance <= 0) {
+    throw new Error('This wallet has no APT on ShelbyNet. Fund it with APT before approving the transaction.')
+  }
+
+  if (shelbyUsdBalance <= 0) {
+    throw new Error('This wallet has no ShelbyUSD on ShelbyNet. Fund it with ShelbyUSD before uploading a blob.')
+  }
 }
 
 async function readErrorBody(response: Response) {
@@ -176,21 +201,31 @@ async function completeMultipartUpload(networkKey: AppNetworkKey, uploadId: stri
   }
 }
 
+async function getRegisteredBlobNames(client: ShelbyClient, account: string, blobNames: string[]) {
+  const results = await Promise.all(
+    blobNames.map(async (blobName) => {
+      const metadata = await client.coordination.getFullObjectMetadata({
+        account,
+        name: blobName,
+      })
+      return metadata ? blobName : null
+    })
+  )
+
+  return new Set(results.filter((blobName): blobName is string => !!blobName))
+}
+
 async function confirmBlobExists(client: ShelbyClient, networkKey: AppNetworkKey, account: string, blobName: string) {
-  const blobKey = createBlobKey({ account, blobName })
-  const retryCount = getBlobConfirmRetryCount(networkKey)
+  const retryCount = getBlobConfirmRetryCount()
 
   for (let attempt = 0; attempt < retryCount; attempt++) {
     try {
-      const coordinationMatch = await client.coordination.getBlobs({
-        where: {
-          blob_name: {
-            _eq: blobKey,
-          },
-        },
+      const coordinationMatch = await client.coordination.getFullObjectMetadata({
+        account,
+        name: blobName,
       })
 
-      if (coordinationMatch.some((blob) => blob.name === blobKey && blob.isWritten)) {
+      if (coordinationMatch?.isWritten) {
         return true
       }
 
@@ -232,9 +267,8 @@ async function putBlobDirect(networkKey: AppNetworkKey, account: string, blobNam
   }
 }
 
-function getMultipartPartSize(blobData: Uint8Array, networkKey: AppNetworkKey) {
-  const preferredPartSize = networkKey === 'testnet' ? TESTNET_MULTIPART_PART_SIZE_BYTES : blobData.length || 1
-  return Math.min(preferredPartSize, Math.max(blobData.length, 1))
+function getMultipartPartSize(blobData: Uint8Array) {
+  return Math.min(MULTIPART_PART_SIZE_BYTES, Math.max(blobData.length, 1))
 }
 
 async function runMultipartUploadOnce(
@@ -245,7 +279,7 @@ async function runMultipartUploadOnce(
   blobData: Uint8Array,
   onProgress?: UploadShelbyBlobsWithWalletParams['onProgress']
 ) {
-  const partSize = getMultipartPartSize(blobData, networkKey)
+  const partSize = getMultipartPartSize(blobData)
   const uploadId = await startMultipartUpload(networkKey, account, blobName, partSize)
   const totalParts = Math.max(1, Math.ceil(blobData.length / partSize))
 
@@ -343,20 +377,18 @@ export async function uploadShelbyBlobsWithWallet({
   }
 
   const account = normalizeAddress(walletAddress)
-  const blobKeys = blobs.map(({ blobName }) => createBlobKey({ account, blobName }))
-  const existing = await client.coordination.getBlobs({
-    where: {
-      blob_name: {
-        _in: blobKeys,
-      },
-    },
-  })
-
-  const missingBlobs = blobs.filter(({ blobName }) => !existing.some((blob) => blob.name === createBlobKey({ account, blobName })))
+  const existingBlobNames = await getRegisteredBlobNames(
+    client,
+    account,
+    blobs.map(({ blobName }) => blobName)
+  )
+  const missingBlobs = blobs.filter(({ blobName }) => !existingBlobNames.has(blobName))
   let transactionHash: string | undefined
+  const aptos = createAptosClient(networkKey)
+
+  await assertShelbyNetFunding(aptos, account, missingBlobs.length > 0)
 
   if (missingBlobs.length > 0) {
-    const aptos = createAptosClient(networkKey)
     const provider = await createDefaultErasureCodingProvider()
     const commitments = await Promise.all(missingBlobs.map(async ({ blobData }) => generateCommitments(provider, blobData)))
     const chunksetSizeBytes = provider.config.erasure_k * provider.config.chunkSizeBytes

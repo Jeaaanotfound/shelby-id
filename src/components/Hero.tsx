@@ -13,8 +13,8 @@ interface HeroProps {
 const valueCards = [
   {
     icon: Shield,
-    title: 'Own the record',
-    description: 'Your profile, proof, and creator metadata live outside the reach of any single platform.',
+    title: 'Keep the record with your wallet',
+    description: 'Your profile metadata and creator files are linked to your Aptos account and readable from ShelbyNet.',
   },
   {
     icon: Globe,
@@ -24,7 +24,7 @@ const valueCards = [
   {
     icon: LinkIcon,
     title: 'One clean surface',
-    description: 'A single link for your identity, your archive, and the onchain proof behind both.',
+    description: 'A single link for your identity, your archive, and the registration records behind them.',
   },
 ]
 
@@ -67,7 +67,7 @@ export default function Hero({ setCurrentPage, viewProfile }: HeroProps) {
             </h1>
 
             <p className="hero-subtitle hero-copy">
-              ShelbyID turns a wallet into a credible public profile: a durable identity layer, a shareable archive,
+              ShelbyID turns a wallet into a credible public profile: a wallet-linked identity layer, a shareable archive,
               and a cleaner way to present work to communities, collaborators, and collectors.
             </p>
 
@@ -151,7 +151,7 @@ export default function Hero({ setCurrentPage, viewProfile }: HeroProps) {
                   <div className="hero-stats">
                     <div className="hero-stats__item">
                       <span>Identity</span>
-                      <strong>anchored</strong>
+                      <strong>registered</strong>
                     </div>
                     <div className="hero-stats__item">
                       <span>Archive</span>
@@ -192,7 +192,7 @@ export default function Hero({ setCurrentPage, viewProfile }: HeroProps) {
             <p className="section-kicker" style={{ color: 'var(--accent)' }}>
               Put your public profile in order
             </p>
-            <h2 className="hero-cta-band__title">A cleaner front door for work that deserves to last.</h2>
+          <h2 className="hero-cta-band__title">A cleaner front door for work you want to share.</h2>
             <p className="hero-cta-band__copy">
               Start on {networkConfig.label} and give your work a surface that feels deliberate from day one.
             </p>

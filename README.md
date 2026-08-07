@@ -9,12 +9,13 @@ Repo: [Jeaaanotfound/shelby-id](https://github.com/Jeaaanotfound/shelby-id)
 
 ## What ShelbyID does
 
-ShelbyID gives creators a durable public surface on top of decentralized storage.
+ShelbyID gives creators a network-backed public surface on top of decentralized storage.
 
 - Mint a Shelby-backed identity tied to an Aptos wallet
 - Upload media to Shelby and keep it organized as a real profile, not a raw blob list
 - Publish a shareable gallery with profile metadata, avatar, and archived work
-- Switch between ShelbyNet and Testnet from the same app
+- Keep wallet, Aptos registration, Shelby reads, writes, and explorer links on ShelbyNet
+- Show the storage record behind a profile, including write status, expiry, commitment reference, and registration activity when indexed
 - Present onchain work in a way that feels usable to communities, collaborators, and collectors
 
 ## Why it exists
@@ -40,12 +41,9 @@ Shelby storage is strong infrastructure, but most people do not want to interact
 - TanStack Query
 - Vercel
 
-## Networks
+## Network
 
-- ShelbyNet
-- Aptos Testnet
-
-ShelbyID is network-aware, including explorer links, storage reads, wallet flows, and per-network API key handling.
+ShelbyID currently targets ShelbyNet only. The app deliberately does not expose a Testnet switch or accept Testnet as a write target. New blobs use a 365-day expiration and the profile exposes that expiry. ShelbyNet is a builder network and may reset, so the app treats storage as network-backed rather than making permanent-storage claims.
 
 ## Local development
 
@@ -59,9 +57,7 @@ npm run dev
 Create a `.env` file in the project root:
 
 ```env
-VITE_SHELBY_TESTNET_API_KEY=
 VITE_SHELBY_SHELBYNET_API_KEY=
-VITE_APTOS_TESTNET_API_KEY=
 VITE_APTOS_SHELBYNET_API_KEY=
 ```
 
@@ -78,9 +74,7 @@ For Vercel:
 
 Environment variables:
 
-- `VITE_SHELBY_TESTNET_API_KEY`
 - `VITE_SHELBY_SHELBYNET_API_KEY`
-- `VITE_APTOS_TESTNET_API_KEY`
 - `VITE_APTOS_SHELBYNET_API_KEY`
 
 ## References

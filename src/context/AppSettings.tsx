@@ -4,14 +4,12 @@ import { createShelbyClient } from '../lib/shelby'
 import {
   DEFAULT_NETWORK_KEY,
   getNetworkConfig,
-  isAppNetworkKey,
   type AppNetworkConfig,
   type AppNetworkKey,
 } from '../lib/aptos'
 
 export type AppTheme = 'dark' | 'light'
 
-const NETWORK_STORAGE_KEY = 'shelbyid.network'
 const THEME_STORAGE_KEY = 'shelbyid.theme'
 
 interface AppSettingsContextValue {
@@ -19,7 +17,6 @@ interface AppSettingsContextValue {
   setTheme: (theme: AppTheme) => void
   toggleTheme: () => void
   networkKey: AppNetworkKey
-  setNetworkKey: (networkKey: AppNetworkKey) => void
   networkConfig: AppNetworkConfig
   shelbyClient: ReturnType<typeof createShelbyClient>
 }
@@ -33,30 +30,15 @@ function getInitialTheme(): AppTheme {
   return stored === 'light' || stored === 'dark' ? stored : 'dark'
 }
 
-function getInitialNetwork(): AppNetworkKey {
-  if (typeof window === 'undefined') return DEFAULT_NETWORK_KEY
-
-  const params = new URLSearchParams(window.location.search)
-  const urlNetwork = params.get('network')
-  if (isAppNetworkKey(urlNetwork)) return urlNetwork
-
-  const stored = window.localStorage.getItem(NETWORK_STORAGE_KEY)
-  return isAppNetworkKey(stored) ? stored : DEFAULT_NETWORK_KEY
-}
-
 export function AppSettingsProvider({ children }: PropsWithChildren) {
   const [theme, setTheme] = useState<AppTheme>(getInitialTheme)
-  const [networkKey, setNetworkKey] = useState<AppNetworkKey>(getInitialNetwork)
+  const networkKey: AppNetworkKey = DEFAULT_NETWORK_KEY
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     document.documentElement.style.colorScheme = theme
     window.localStorage.setItem(THEME_STORAGE_KEY, theme)
   }, [theme])
-
-  useEffect(() => {
-    window.localStorage.setItem(NETWORK_STORAGE_KEY, networkKey)
-  }, [networkKey])
 
   const networkConfig = useMemo(() => getNetworkConfig(networkKey), [networkKey])
   const shelbyClient = useMemo(
@@ -70,7 +52,6 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
       setTheme,
       toggleTheme: () => setTheme((current) => (current === 'dark' ? 'light' : 'dark')),
       networkKey,
-      setNetworkKey,
       networkConfig,
       shelbyClient,
     }),

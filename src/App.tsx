@@ -5,8 +5,6 @@ import Profile from './components/Profile'
 import CreateID from './components/CreateID'
 import Dashboard from './components/Dashboard'
 import Gallery from './components/Gallery'
-import { useAppSettings } from './context/AppSettings'
-import { DEFAULT_NETWORK_KEY } from './lib/aptos'
 
 type Page = 'home' | 'profile' | 'create' | 'dashboard' | 'gallery'
 
@@ -16,7 +14,6 @@ function getAddressFromUrl(): string | null {
 }
 
 function App() {
-  const { networkKey } = useAppSettings()
   const urlAddress  = getAddressFromUrl()
   const initialPage: Page = urlAddress
     ? (window.location.search.includes('gallery') ? 'gallery' : 'profile')
@@ -31,11 +28,7 @@ function App() {
     url.searchParams.delete('profile')
     url.searchParams.delete('gallery')
 
-    if (networkKey !== DEFAULT_NETWORK_KEY) {
-      url.searchParams.set('network', networkKey)
-    } else {
-      url.searchParams.delete('network')
-    }
+    url.searchParams.delete('network')
 
     if (currentPage === 'profile' && profileAddress) {
       url.searchParams.set('profile', profileAddress)
@@ -44,7 +37,7 @@ function App() {
     }
 
     window.history.replaceState({}, '', url.toString())
-  }, [currentPage, networkKey, profileAddress, walletAddress])
+  }, [currentPage, profileAddress, walletAddress])
 
   const viewProfile = (address: string) => {
     setProfileAddress(address)

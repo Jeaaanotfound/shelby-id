@@ -5,7 +5,6 @@ import { useAppSettings } from '../context/AppSettings'
 import { WALLET_MODAL_REOPEN_STORAGE_KEY } from '../context/WalletRuntime'
 import WalletModal from './WalletModal'
 import BrandLogo from './BrandLogo'
-import type { AppNetworkKey } from '../lib/aptos'
 
 type Page = 'home' | 'profile' | 'create' | 'dashboard' | 'gallery'
 
@@ -23,16 +22,11 @@ const navItems: { page: Page; label: string }[] = [
   { page: 'create', label: 'Mint' },
 ]
 
-const networkButtons: { key: AppNetworkKey; label: string }[] = [
-  { key: 'shelbynet', label: 'ShelbyNet' },
-  { key: 'testnet', label: 'Testnet' },
-]
-
 export default function Header({ currentPage, setCurrentPage, setWalletAddress }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const { address, shortAddress, connected, disconnect } = useWallet()
-  const { networkConfig, networkKey, setNetworkKey, theme, toggleTheme } = useAppSettings()
+  const { networkConfig, theme, toggleTheme } = useAppSettings()
 
   const syncAddress = useCallback(() => {
     setWalletAddress(address)
@@ -48,21 +42,6 @@ export default function Header({ currentPage, setCurrentPage, setWalletAddress }
     window.sessionStorage.removeItem(WALLET_MODAL_REOPEN_STORAGE_KEY)
     setModalOpen(true)
   }, [])
-
-  const renderNetworkSwitch = (compact = false) => (
-    <div className={`network-switch ${compact ? 'w-full' : ''}`}>
-      {networkButtons.map((entry) => (
-        <button
-          key={entry.key}
-          type="button"
-          onClick={() => setNetworkKey(entry.key)}
-          className={`network-switch__button ${networkKey === entry.key ? 'network-switch__button-active' : ''}`}
-        >
-          {entry.label}
-        </button>
-      ))}
-    </div>
-  )
 
   return (
     <>
@@ -86,8 +65,6 @@ export default function Header({ currentPage, setCurrentPage, setWalletAddress }
             </nav>
 
             <div className="hidden md:flex items-center gap-3">
-              {renderNetworkSwitch()}
-
               <button type="button" onClick={toggleTheme} className="control-button" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
                 {theme === 'dark' ? <SunMedium size={16} /> : <Moon size={16} />}
               </button>
@@ -131,7 +108,13 @@ export default function Header({ currentPage, setCurrentPage, setWalletAddress }
               <div className="mobile-menu">
                 <div className="mobile-menu__section">
                   <p className="mobile-menu__label">Network</p>
-                  {renderNetworkSwitch(true)}
+                  <div className="network-pill w-full">
+                    <span className="network-pill__dot" />
+                    <div>
+                      <p className="network-pill__label">{networkConfig.label}</p>
+                      <p className="network-pill__sub">{networkConfig.badge}</p>
+                    </div>
+                  </div>
                   <p className="text-xs" style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>
                     {networkConfig.note}
                   </p>

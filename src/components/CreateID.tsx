@@ -4,7 +4,7 @@ import { useWallet as useAptosWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAppSettings } from '../context/AppSettings'
 import { useToast } from '../context/ToastContext'
 import { getWalletAddress, sameAddress } from '../lib/aptos'
-import { createExpirationMicros, formatShelbyErrorMessage, getIdentityBlobName } from '../lib/shelby'
+import { createExpirationMicros, formatShelbyErrorMessage, getIdentityBlobName, SHELBY_BLOB_EXPIRATION_DAYS } from '../lib/shelby'
 import { uploadShelbyBlobsWithWallet } from '../lib/shelbyWrite'
 import { ensureWalletMatchesAppNetwork, getTransactionErrorMessage, isWalletRejectedError } from '../lib/transactions'
 
@@ -67,7 +67,6 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
     try {
       await ensureWalletMatchesAppNetwork({
         walletNetwork: network,
-        changeNetwork: null,
         networkKey,
         notify,
       })
@@ -82,7 +81,7 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
             blobData: new TextEncoder().encode(JSON.stringify(identity)),
           },
         ],
-        expirationMicros: createExpirationMicros(365),
+        expirationMicros: createExpirationMicros(SHELBY_BLOB_EXPIRATION_DAYS),
         networkKey,
       })
 
@@ -166,13 +165,13 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
           <div className="premium-hero__grid">
             <div>
               <span className="premium-kicker">Create ShelbyID</span>
-              <h1 className="premium-title premium-title--wide">Publish a public identity that feels clear, durable, and worth trusting.</h1>
+              <h1 className="premium-title premium-title--wide">Publish a public identity that feels clear, wallet-linked, and worth trusting.</h1>
               <p className="premium-copy">
-                ShelbyID should feel less like filling a profile form and more like publishing a verified calling card. The record lives on {networkConfig.label}, and the metadata is ready to travel with your work.
+                ShelbyID should feel less like filling a profile form and more like publishing a wallet-linked calling card. The record is stored on {networkConfig.label}, and the metadata is ready to travel with your work.
               </p>
               <div className="premium-meta-row">
                 <span className="premium-chip premium-chip--accent">
-                  <ShieldCheck size={13} /> Verifiable record
+                  <ShieldCheck size={13} /> Readable record
                 </span>
                 <span className="premium-chip">
                   <Sparkles size={13} /> Curated identity layer
@@ -184,7 +183,7 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
               <span className="premium-aside-card__eyebrow">Why this matters</span>
               <h2 className="premium-aside-card__title">People should understand who you are before they scroll.</h2>
               <p className="premium-aside-card__copy">
-                A good ShelbyID gives collectors, collaborators, and peers a fast signal. It pairs a stable address with a clear name, category, and proof that the identity is anchored to Shelby storage.
+                A good ShelbyID gives collectors, collaborators, and peers a fast signal. It pairs a stable address with a clear name, category, and a registration record linking the identity metadata to Shelby storage.
               </p>
               <div className="muted-dot-list">
                 <span>Stored on Shelby</span>
@@ -276,7 +275,7 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
               <div className="action-row">
                 <span className="premium-chip premium-chip--accent">{category}</span>
                 <span className="premium-chip">
-                  <CheckCircle size={12} /> verified
+                  <CheckCircle size={12} /> wallet-linked
                 </span>
               </div>
               <p className="premium-aside-card__copy">{bio || networkConfig.tagline}</p>
