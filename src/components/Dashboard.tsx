@@ -291,7 +291,7 @@ export default function Dashboard({ walletAddress, setCurrentPage }: DashboardPr
 
               <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => handleUpload(event.target.files)} />
               <div
-                className="upload-drop-zone p-6 text-center cursor-pointer"
+                className="upload-drop-zone text-center cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => {
@@ -373,7 +373,7 @@ export default function Dashboard({ walletAddress, setCurrentPage }: DashboardPr
 
           <div className="editorial-stack">
             <div className="premium-surface premium-surface--padded">
-              <div className="premium-section-head">
+              <div className="premium-section-head premium-section-head--action">
                 <div>
                   <p className="section-kicker">Identity Surface</p>
                   <h2>Profile posture</h2>
