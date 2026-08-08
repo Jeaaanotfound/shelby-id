@@ -28,6 +28,9 @@ interface UploadShelbyBlobsWithWalletParams {
 interface UploadShelbyBlobsWithWalletResult {
   registrationStatus: 'registered'
   transactionHash?: string
+  registrationTransactionHash?: string
+  transactionHashes?: string[]
+  transactionBlobName?: string
 }
 
 export interface UploadProgressUpdate {
@@ -38,6 +41,8 @@ export interface UploadProgressUpdate {
 }
 
 const INDEXER_SETTLE_DELAY_MS = 1_500
+const READ_BACK_ATTEMPTS = 12
+const READ_BACK_DELAY_MS = 1_000
 const SHELBYNET_LOCATION_HINT = 'shelbynet-1'
 
 function sleep(ms: number) {
@@ -100,6 +105,75 @@ function reportProgress(
 function getShelbyObjectName(account: string, blobName: string) {
   const longAddress = normalizeAddress(account).replace(/^0x/i, '').padStart(64, '0')
   return `@${longAddress}/${blobName}`
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false
+
+  return left.every((byte, index) => byte === right[index])
+}
+
+function hexToBytes(value: string): Uint8Array {
+  const hex = value.replace(/^0x/i, '')
+  const bytes = new Uint8Array(Math.ceil(hex.length / 2))
+
+  for (let index = 0; index < hex.length; index += 2) {
+    bytes[index / 2] = Number.parseInt(hex.slice(index, index + 2), 16)
+  }
+
+  return bytes
+}
+
+async function waitForWrittenBlob({
+  shelbyClient,
+  account,
+  blobName,
+  expectedSize,
+  expectedMerkleRoot,
+}: {
+  shelbyClient: ReturnType<typeof createShelbyClient>
+  account: string
+  blobName: string
+  expectedSize: number
+  expectedMerkleRoot: string
+}) {
+  const readMetadata = shelbyClient.coordination.getFullObjectMetadata
+
+  if (typeof readMetadata !== 'function') {
+    throw new Error('Shelby SDK read-back verification is unavailable in this build.')
+  }
+
+  let lastReadError: unknown = null
+
+  for (let attempt = 0; attempt < READ_BACK_ATTEMPTS; attempt += 1) {
+    try {
+      const metadata = await readMetadata.call(shelbyClient.coordination, {
+        account,
+        name: blobName,
+      })
+
+      if (
+        metadata &&
+        metadata.isWritten &&
+        !metadata.isDeleted &&
+        metadata.size === expectedSize &&
+        equalBytes(metadata.blobMerkleRoot, hexToBytes(expectedMerkleRoot))
+      ) {
+        return metadata
+      }
+    } catch (error) {
+      lastReadError = error
+    }
+
+    if (attempt < READ_BACK_ATTEMPTS - 1) {
+      await sleep(READ_BACK_DELAY_MS)
+    }
+  }
+
+  const detail = lastReadError instanceof Error ? ` Last read: ${lastReadError.message}` : ''
+  throw new Error(
+    `Shelby committed '${blobName}', but read-back verification did not confirm a written blob yet.${detail}`
+  )
 }
 
 export async function uploadShelbyBlobsWithWallet({
@@ -204,12 +278,14 @@ export async function uploadShelbyBlobsWithWallet({
         )
       }
 
-      return { blob, uid, spAcks }
+      return { blob, uid, spAcks, merkleRoot: commitments.blob_merkle_root }
     })
   )
 
   let transactionHash = registrationPending.hash
-  for (const { blob, uid, spAcks } of uploads) {
+  const transactionHashes = [registrationPending.hash]
+  let transactionBlobName: string | undefined
+  for (const { blob, uid, spAcks, merkleRoot } of uploads) {
     reportProgress(onProgress, blob.blobName, 84, 'finalizing', 'Waiting for wallet approval to finalize')
     const commitPending = await signAndSubmitTransaction({
       data: ShelbyBlobClient.createCommitObjectPayload({
@@ -221,6 +297,8 @@ export async function uploadShelbyBlobsWithWallet({
       }),
     })
     transactionHash = commitPending.hash
+    transactionHashes.push(commitPending.hash)
+    transactionBlobName = blob.blobName
 
     reportProgress(onProgress, blob.blobName, 92, 'verifying', 'Confirming the Shelby commit')
     const commitReceipt = await aptos.waitForTransaction({
@@ -239,7 +317,16 @@ export async function uploadShelbyBlobsWithWallet({
       throw new Error(`Shelby rejected '${blob.blobName}' during commit: ${commitRejection}.`)
     }
 
-    reportProgress(onProgress, blob.blobName, 100, 'done', 'Stored successfully')
+    reportProgress(onProgress, blob.blobName, 96, 'verifying', 'Reading back written metadata from ShelbyNet')
+    await waitForWrittenBlob({
+      shelbyClient,
+      account,
+      blobName: blob.blobName,
+      expectedSize: blob.blobData.length,
+      expectedMerkleRoot: merkleRoot,
+    })
+
+    reportProgress(onProgress, blob.blobName, 100, 'done', 'Stored and verified on ShelbyNet')
   }
 
   await sleep(INDEXER_SETTLE_DELAY_MS)
@@ -247,5 +334,8 @@ export async function uploadShelbyBlobsWithWallet({
   return {
     registrationStatus: 'registered',
     transactionHash,
+    registrationTransactionHash: registrationPending.hash,
+    transactionHashes,
+    transactionBlobName,
   }
 }

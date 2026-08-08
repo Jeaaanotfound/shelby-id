@@ -28,6 +28,8 @@ ShelbyID is a creator-facing identity and portfolio surface. A user can connect 
 - New identity, avatar, and portfolio writes use a documented 365-day blob expiration.
 - Profile verification reads blob status, expiry, Merkle root, and registration activity from Shelby metadata.
 - Uploads preflight APT and ShelbyUSD balances before writing.
+- Upload success waits for ShelbyNet read-back metadata with `isWritten`, exact size, and matching Merkle root.
+- Success notifications expose the confirmed Aptos transaction and the relevant Shelby Explorer blob link.
 - ShelbyNet indexer compatibility is aligned with the current schema: SDK `0.6.0`, React bindings `4.1.0`, and `object_name`-based activity queries.
 - The mint preflight no longer calls the removed legacy `blob_name` GraphQL field or the old `getBlobMetadata` helper.
 - README setup and deployment documentation with product screenshot.

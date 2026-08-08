@@ -62,14 +62,14 @@ Deprecated network values must not be exposed as selectable app targets. The tra
 
 ## Upload Behavior
 
-- Missing blobs require an Aptos registration transaction signed by the connected wallet.
-- Existing registered blobs should not trigger a new registration approval.
-- The app waits for transaction confirmation and indexer settling before writing bytes.
-- Small ShelbyNet files try direct blob write first and fall back to multipart.
-- Multipart uploads use 1 MiB parts and retry transient session/part/finalize errors.
+- Every upload uses the current wallet-adapter flow: one batch registration approval, Shelby v2 chunkset upload, and one `commit_object` approval per blob. This supports both new blobs and overwrites without the removed v1 multipart route.
+- The registration payload uses the ShelbyNet location hint `shelbynet-1`.
+- The app waits for registration and commit transaction confirmation, storage-provider acknowledgements, and Shelby coordination read-back before showing success.
+- Read-back requires `isWritten`, the expected byte size, and the expected Merkle root from `coordination.getFullObjectMetadata`.
+- Success notifications expose the confirmed Aptos transaction and the relevant Shelby Explorer blob link.
 - New writes use `SHELBY_BLOB_EXPIRATION_DAYS` (currently 365 days) for identity, avatar, and portfolio blobs.
 - Uploads check APT and ShelbyUSD balances before registration/storage writes and fail with a funding-specific message when either is zero.
-- A failed finalize is not success unless a follow-up read or coordination check confirms the blob is written.
+- A failed commit or read-back verification is never shown as success.
 - Current ShelbyNet indexer fields use `object_name`, `is_persisted`, `is_committed`, and `blob_commitment`; do not reintroduce the old `blob_name` query shape.
 - Upload UI exposes preparation, wallet approval, registration, upload, finalization, verification, success, and failure.
 

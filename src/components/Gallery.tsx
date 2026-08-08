@@ -5,7 +5,7 @@ import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { useWallet as useAptosWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAppSettings } from '../context/AppSettings'
 import { useToast } from '../context/ToastContext'
-import { getWalletAddress, isValidAptosAddress, sameAddress } from '../lib/aptos'
+import { getAptosTransactionExplorerUrl, getShelbyBlobExplorerUrl, getWalletAddress, isValidAptosAddress, sameAddress, shortenTransactionHash } from '../lib/aptos'
 import { buildBlobName, createExpirationMicros, formatShelbyErrorMessage, getBlobReadUrl, isReservedBlobPath, SHELBY_BLOB_EXPIRATION_DAYS } from '../lib/shelby'
 import { uploadShelbyBlobsWithWallet, type UploadProgressUpdate } from '../lib/shelbyWrite'
 import { ensureWalletMatchesAppNetwork, getTransactionErrorMessage, isWalletRejectedError } from '../lib/transactions'
@@ -232,7 +232,7 @@ export default function Gallery({ walletAddress }: GalleryProps) {
         })
       })
 
-      await uploadShelbyBlobsWithWallet({
+      const uploadResult = await uploadShelbyBlobsWithWallet({
         walletAddress,
         signAndSubmitTransaction,
         blobs: preparedBlobs.map(({ blobName, blobData }) => ({ blobName, blobData })),
@@ -261,7 +261,13 @@ export default function Gallery({ walletAddress }: GalleryProps) {
       notify({
         tone: 'success',
         title: 'Gallery upload complete',
-        description: `${preparedBlobs.length} file${preparedBlobs.length > 1 ? 's' : ''} stored on ${networkConfig.label}.`,
+        description: `${preparedBlobs.length} file${preparedBlobs.length > 1 ? 's' : ''} stored and read-back verified on ${networkConfig.label}. Transaction ${uploadResult.transactionHash ? shortenTransactionHash(uploadResult.transactionHash) : 'confirmed'}.`,
+        actions: uploadResult.transactionHash
+          ? [
+              { label: 'Aptos transaction', href: getAptosTransactionExplorerUrl(uploadResult.transactionHash, networkKey) },
+              { label: preparedBlobs.length > 1 ? 'Latest Shelby blob' : 'Shelby blob', href: getShelbyBlobExplorerUrl(walletAddress, uploadResult.transactionBlobName ?? preparedBlobs[0].blobName, networkKey) },
+            ]
+          : undefined,
       })
 
       window.setTimeout(() => {

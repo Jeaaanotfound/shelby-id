@@ -66,15 +66,15 @@ function getBlobStatus(blob: ShelbyBlob | undefined): string {
 
 function VerificationRow({ label, value, href }: { label: string; value: string; href?: string }) {
   return (
-    <div className="editorial-row">
-      <div className="editorial-row__meta min-w-0">
-        <p className="editorial-row__sub">{label}</p>
+    <div className="verification-row">
+      <p className="verification-row__label">{label}</p>
+      <div className="verification-row__value-wrap">
         {href ? (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="editorial-row__title truncate inline-flex items-center gap-1.5">
-            {value} <ExternalLink size={12} />
+          <a href={href} target="_blank" rel="noopener noreferrer" className="verification-row__value verification-row__value--link">
+            <span>{value}</span> <ExternalLink size={12} />
           </a>
         ) : (
-          <p className="editorial-row__title break-all">{value}</p>
+          <p className="verification-row__value">{value}</p>
         )}
       </div>
     </div>
@@ -279,7 +279,7 @@ export default function Profile({ walletAddress, setCurrentPage }: ProfileProps)
               </div>
               <p>Read-only metadata from Aptos and ShelbyNet.</p>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="verification-grid">
               <VerificationRow label="Account" value={walletAddress} href={getAptosAccountExplorerUrl(walletAddress, networkKey)} />
               <VerificationRow label="Network" value={networkConfig.label} />
               <VerificationRow label="Identity blob" value={identityBlob ? getBlobName(identityBlob) : 'Not indexed'} href={identityBlob ? getShelbyBlobExplorerUrl(walletAddress, getBlobName(identityBlob), networkKey) : undefined} />

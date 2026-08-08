@@ -1,14 +1,20 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import type { PropsWithChildren } from 'react'
-import { AlertCircle, CheckCircle2, Info, TriangleAlert, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ExternalLink, Info, TriangleAlert, X } from 'lucide-react'
 
 export type ToastTone = 'success' | 'error' | 'warning' | 'info'
+
+export interface ToastAction {
+  label: string
+  href: string
+}
 
 export interface ToastInput {
   title: string
   description?: string
   tone?: ToastTone
   durationMs?: number
+  actions?: ToastAction[]
 }
 
 interface ToastRecord extends ToastInput {
@@ -64,6 +70,15 @@ export function ToastProvider({ children }: PropsWithChildren) {
               <div className="toast-card__content">
                 <p className="toast-card__title">{toast.title}</p>
                 {toast.description && <p className="toast-card__description">{toast.description}</p>}
+                {toast.actions && toast.actions.length > 0 && (
+                  <div className="toast-card__actions">
+                    {toast.actions.map((action) => (
+                      <a key={`${action.label}-${action.href}`} href={action.href} target="_blank" rel="noopener noreferrer" className="toast-card__action">
+                        {action.label} <ExternalLink size={11} />
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
               <button type="button" onClick={() => dismiss(toast.id)} className="toast-card__close" aria-label="Dismiss notification">
                 <X size={14} />

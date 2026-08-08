@@ -14,7 +14,7 @@ Use this checklist before asking Shelby to review the repository. Do not mark an
 - [x] Add a Profile verification panel.
 - [ ] Show wallet address, ShelbyNet, blob name, blob type, status, registration transaction, expiration, and commitment reference.
 - [ ] Add direct Aptos Explorer and Shelby Explorer links.
-- [ ] Make upload success depend on confirmed `written` status, not only an HTTP response.
+- [x] Make upload success depend on confirmed `written` status and matching metadata read-back, not only an HTTP response.
 - [ ] Keep the gallery honest: no UI control may claim private access unless privacy is persisted and enforced.
 - [ ] Keep ShelbyNet service errors visible and actionable.
 
@@ -23,7 +23,7 @@ Use this checklist before asking Shelby to review the repository. Do not mark an
 - [x] Add an APT balance preflight before registration transactions.
 - [x] Add a ShelbyUSD/storage balance preflight before blob uploads.
 - [ ] Explain funding requirements before signing.
-- [ ] Show the registration transaction hash after success.
+- [x] Show the confirmed transaction hash after success with Aptos and Shelby Explorer links.
 - [ ] Add retry only for known transient failures.
 - [ ] Stop polling after repeated service failures.
 - [ ] Add a retry action for failed uploads.

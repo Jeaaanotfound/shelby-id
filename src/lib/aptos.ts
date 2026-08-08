@@ -59,6 +59,11 @@ export function getAptosTransactionExplorerUrl(transactionHash: string, networkK
   return `https://explorer.aptoslabs.com/txn/${encodeURIComponent(transactionHash)}?network=${networkKey}`
 }
 
+export function shortenTransactionHash(transactionHash: string): string {
+  if (transactionHash.length <= 20) return transactionHash
+  return `${transactionHash.slice(0, 10)}...${transactionHash.slice(-8)}`
+}
+
 export function getShelbyExplorerUrl(networkKey: AppNetworkKey): string {
   return getNetworkConfig(networkKey).shelbyExplorerBase
 }

@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { AlertCircle, ArrowRight, CheckCircle, Loader, ShieldCheck, Sparkles } from 'lucide-react'
+import { AlertCircle, ArrowRight, CheckCircle, ExternalLink, Loader, ShieldCheck, Sparkles } from 'lucide-react'
 import { useWallet as useAptosWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAppSettings } from '../context/AppSettings'
 import { useToast } from '../context/ToastContext'
-import { getWalletAddress, sameAddress } from '../lib/aptos'
+import { getAptosTransactionExplorerUrl, getShelbyBlobExplorerUrl, getWalletAddress, sameAddress, shortenTransactionHash } from '../lib/aptos'
 import { createExpirationMicros, formatShelbyErrorMessage, getIdentityBlobName, SHELBY_BLOB_EXPIRATION_DAYS } from '../lib/shelby'
 import { uploadShelbyBlobsWithWallet } from '../lib/shelbyWrite'
 import { ensureWalletMatchesAppNetwork, getTransactionErrorMessage, isWalletRejectedError } from '../lib/transactions'
@@ -32,6 +32,7 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
   const [category, setCategory] = useState<Category>('creator')
   const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [transactionHash, setTransactionHash] = useState<string | null>(null)
 
   const { notify } = useToast()
   const { account, network, signAndSubmitTransaction } = useAptosWallet()
@@ -53,6 +54,7 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
 
     setStatus('uploading')
     setErrorMsg('')
+    setTransactionHash(null)
 
     const identity = {
       version: '1.0',
@@ -71,7 +73,7 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
         notify,
       })
 
-      await uploadShelbyBlobsWithWallet({
+      const uploadResult = await uploadShelbyBlobsWithWallet({
         walletAddress,
         signAndSubmitTransaction,
         blobs: [
@@ -84,11 +86,18 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
         networkKey,
       })
 
+      setTransactionHash(uploadResult.transactionHash ?? null)
       setStatus('success')
       notify({
         tone: 'success',
         title: 'ShelbyID minted',
-        description: `Identity created successfully on ${networkConfig.label}.`,
+        description: `Identity created and read-back verified on ${networkConfig.label}. Transaction ${uploadResult.transactionHash ? shortenTransactionHash(uploadResult.transactionHash) : 'confirmed'}.`,
+        actions: uploadResult.transactionHash
+          ? [
+              { label: 'Aptos transaction', href: getAptosTransactionExplorerUrl(uploadResult.transactionHash, networkKey) },
+              { label: 'Shelby blob', href: getShelbyBlobExplorerUrl(walletAddress, getIdentityBlobName(walletAddress), networkKey) },
+            ]
+          : undefined,
       })
     } catch (err) {
       setStatus('error')
@@ -141,6 +150,20 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
           <p className="text-sm mb-8 animate-fade-up delay-2" style={{ color: 'var(--text-secondary)' }}>
             Your ShelbyID is now live on {networkConfig.label} through Shelby Protocol.
           </p>
+          {transactionHash && (
+            <div className="premium-surface premium-surface--padded text-left mb-8 animate-fade-up delay-2" style={{ background: 'color-mix(in oklch, var(--success) 7%, var(--bg-elevated))' }}>
+              <p className="section-kicker">Commit verified</p>
+              <p className="text-xs font-mono mt-2" style={{ color: 'var(--text-secondary)' }}>{shortenTransactionHash(transactionHash)}</p>
+              <div className="flex flex-wrap gap-3 mt-3">
+                <a href={getAptosTransactionExplorerUrl(transactionHash, networkKey)} target="_blank" rel="noopener noreferrer" className="text-xs inline-flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
+                  Aptos transaction <ExternalLink size={12} />
+                </a>
+                <a href={getShelbyBlobExplorerUrl(walletAddress, getIdentityBlobName(walletAddress), networkKey)} target="_blank" rel="noopener noreferrer" className="text-xs inline-flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
+                  Shelby blob <ExternalLink size={12} />
+                </a>
+              </div>
+            </div>
+          )}
           <div className="flex gap-3 justify-center animate-fade-up delay-3">
             <button onClick={() => setCurrentPage('profile')} className="btn-pink px-6 py-2.5 rounded-full text-sm font-semibold">
               View Profile

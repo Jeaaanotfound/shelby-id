@@ -3,7 +3,7 @@ import { X, Camera, Upload, CheckCircle, Loader, AlertCircle } from 'lucide-reac
 import { useWallet as useAptosWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAppSettings } from '../context/AppSettings'
 import { useToast } from '../context/ToastContext'
-import { sameAddress } from '../lib/aptos'
+import { getAptosTransactionExplorerUrl, getShelbyBlobExplorerUrl, sameAddress, shortenTransactionHash } from '../lib/aptos'
 import { createExpirationMicros, formatShelbyErrorMessage, getAvatarBlobName, SHELBY_BLOB_EXPIRATION_DAYS } from '../lib/shelby'
 import { uploadShelbyBlobsWithWallet } from '../lib/shelbyWrite'
 import { ensureWalletMatchesAppNetwork, getTransactionErrorMessage, isWalletRejectedError } from '../lib/transactions'
@@ -118,7 +118,7 @@ export default function AvatarPicker({ walletAddress, currentAvatarUrl, onClose,
       const fileToUpload = previewFile ?? (await presetToBlob(selectedPreset!))
       const blobData = new Uint8Array(await fileToUpload.arrayBuffer())
 
-      await uploadShelbyBlobsWithWallet({
+      const uploadResult = await uploadShelbyBlobsWithWallet({
         walletAddress,
         signAndSubmitTransaction,
         blobs: [{ blobName: getAvatarBlobName(walletAddress), blobData }],
@@ -130,7 +130,13 @@ export default function AvatarPicker({ walletAddress, currentAvatarUrl, onClose,
       notify({
         tone: 'success',
         title: 'Avatar updated',
-        description: `Your new avatar is live on ${networkConfig.label}.`,
+        description: `Avatar stored and read-back verified on ${networkConfig.label}. Transaction ${uploadResult.transactionHash ? shortenTransactionHash(uploadResult.transactionHash) : 'confirmed'}.`,
+        actions: uploadResult.transactionHash
+          ? [
+              { label: 'Aptos transaction', href: getAptosTransactionExplorerUrl(uploadResult.transactionHash, networkKey) },
+              { label: 'Shelby blob', href: getShelbyBlobExplorerUrl(walletAddress, getAvatarBlobName(walletAddress), networkKey) },
+            ]
+          : undefined,
       })
       setTimeout(() => {
         onSuccess()
