@@ -41,6 +41,7 @@ const INDEXER_SETTLE_DELAY_MS = 1_500
 const MULTIPART_PART_SIZE_BYTES = 1_048_576
 const DIRECT_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
 const MULTIPART_SESSION_RETRY_COUNT = 2
+const SHELBYNET_LOCATION_HINT = 'shelbynet-1'
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
@@ -456,6 +457,7 @@ export async function uploadShelbyBlobsWithWallet({
 
     const transactionPayload = ShelbyBlobClient.createBatchRegisterBlobsPayload({
       account: AccountAddress.from(account),
+      locationHint: SHELBYNET_LOCATION_HINT,
       expirationMicros,
       blobs: missingBlobs.map(({ blobName, blobData }, index) => ({
         blobName,
