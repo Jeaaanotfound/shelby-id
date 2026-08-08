@@ -232,7 +232,7 @@ export default function Gallery({ walletAddress }: GalleryProps) {
         })
       })
 
-      const result = await uploadShelbyBlobsWithWallet({
+      await uploadShelbyBlobsWithWallet({
         walletAddress,
         signAndSubmitTransaction,
         blobs: preparedBlobs.map(({ blobName, blobData }) => ({ blobName, blobData })),
@@ -253,10 +253,7 @@ export default function Gallery({ walletAddress }: GalleryProps) {
       preparedBlobs.forEach(({ fileName }) => {
         updateUploadCard(fileName, {
           progress: 100,
-          stage:
-            result.registrationStatus === 'registered'
-              ? 'Stored successfully'
-              : 'Updated successfully. Blob was already registered.',
+          stage: 'Stored successfully',
           tone: 'success',
         })
       })
@@ -264,10 +261,7 @@ export default function Gallery({ walletAddress }: GalleryProps) {
       notify({
         tone: 'success',
         title: 'Gallery upload complete',
-        description:
-          result.registrationStatus === 'registered'
-            ? `${preparedBlobs.length} file${preparedBlobs.length > 1 ? 's' : ''} stored on ${networkConfig.label}.`
-            : `Files were updated on ${networkConfig.label}. No wallet approval was needed because the blobs were already registered.`,
+        description: `${preparedBlobs.length} file${preparedBlobs.length > 1 ? 's' : ''} stored on ${networkConfig.label}.`,
       })
 
       window.setTimeout(() => {

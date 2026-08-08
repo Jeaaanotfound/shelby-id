@@ -118,7 +118,7 @@ export default function AvatarPicker({ walletAddress, currentAvatarUrl, onClose,
       const fileToUpload = previewFile ?? (await presetToBlob(selectedPreset!))
       const blobData = new Uint8Array(await fileToUpload.arrayBuffer())
 
-      const result = await uploadShelbyBlobsWithWallet({
+      await uploadShelbyBlobsWithWallet({
         walletAddress,
         signAndSubmitTransaction,
         blobs: [{ blobName: getAvatarBlobName(walletAddress), blobData }],
@@ -130,10 +130,7 @@ export default function AvatarPicker({ walletAddress, currentAvatarUrl, onClose,
       notify({
         tone: 'success',
         title: 'Avatar updated',
-        description:
-          result.registrationStatus === 'registered'
-            ? `Your new avatar is live on ${networkConfig.label}.`
-            : `Your avatar was updated on ${networkConfig.label}. No extra wallet approval was needed because the blob was already registered.`,
+        description: `Your new avatar is live on ${networkConfig.label}.`,
       })
       setTimeout(() => {
         onSuccess()

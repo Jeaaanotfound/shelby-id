@@ -71,7 +71,7 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
         notify,
       })
 
-      const result = await uploadShelbyBlobsWithWallet({
+      await uploadShelbyBlobsWithWallet({
         walletAddress,
         signAndSubmitTransaction,
         blobs: [
@@ -88,10 +88,7 @@ export default function CreateID({ walletAddress, setCurrentPage }: CreateIDProp
       notify({
         tone: 'success',
         title: 'ShelbyID minted',
-        description:
-          result.registrationStatus === 'registered'
-            ? `Identity created successfully on ${networkConfig.label}.`
-            : `Identity updated on ${networkConfig.label}. No wallet approval was needed because the blob was already registered.`,
+        description: `Identity created successfully on ${networkConfig.label}.`,
       })
     } catch (err) {
       setStatus('error')

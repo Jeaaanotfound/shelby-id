@@ -163,7 +163,7 @@ export default function Dashboard({ walletAddress, setCurrentPage }: DashboardPr
         setUploadProgress((progress) => ({ ...progress, [fileName]: 50 }))
       })
 
-      const result = await uploadShelbyBlobsWithWallet({
+      await uploadShelbyBlobsWithWallet({
         walletAddress,
         signAndSubmitTransaction,
         blobs: preparedBlobs.map(({ blobName, blobData }) => ({ blobName, blobData })),
@@ -178,10 +178,7 @@ export default function Dashboard({ walletAddress, setCurrentPage }: DashboardPr
       notify({
         tone: 'success',
         title: 'Upload complete',
-        description:
-          result.registrationStatus === 'registered'
-            ? `${preparedBlobs.length} file${preparedBlobs.length > 1 ? 's' : ''} stored on ${networkConfig.label}.`
-            : `Files updated on ${networkConfig.label}. No wallet approval was needed because the blobs were already registered.`,
+        description: `${preparedBlobs.length} file${preparedBlobs.length > 1 ? 's' : ''} stored on ${networkConfig.label}.`,
       })
 
       window.setTimeout(() => {

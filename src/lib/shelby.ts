@@ -34,6 +34,11 @@ export function createShelbyClient(networkKey: AppNetworkKey): ShelbyClient {
 
   return new ShelbyClient({
     network: networkConfig.aptosNetwork,
+    aptos: {
+      fullnode: networkConfig.aptosApiBase,
+      ...(apiKey ? { clientConfig: { API_KEY: apiKey } } : {}),
+    },
+    rpc: { baseUrl: networkConfig.shelbyRpcBase },
     indexer: { baseUrl: networkConfig.shelbyIndexerBase },
     ...(apiKey ? { apiKey } : {}),
   })
@@ -96,6 +101,10 @@ export function formatShelbyErrorMessage(error: unknown, networkKey: AppNetworkK
 
   if (normalized.includes('api key not found') || normalized.includes('unauthorized') || normalized.includes('"code":"401"')) {
     return `Shelby ${networkLabel} API key is missing or invalid. Set a valid VITE_SHELBY_SHELBYNET_API_KEY in your .env and restart the app.`
+  }
+
+  if (normalized.includes('status: 404') || normalized.includes('not found')) {
+    return `Shelby ${networkLabel} could not find the registered blob or storage route. The network may still be indexing the registration; wait a moment and try again.`
   }
 
   if (
